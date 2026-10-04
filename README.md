@@ -58,6 +58,33 @@ Then open the Index Page, find `research`, and open its Plugin Page.
 research keeps its data in one file, `research.db`, in its own directory. Git
 ignores it: it is your research, not the project's.
 
+## Topics
+
+A **Topic** is one subject: a name, an optional question, and its own list of
+Sources. On the Plugin Page, press **New Topic**, and type the Sources one
+address on each line. An address that is not `http` or `https` is refused, and
+the page names its line. A Topic opens at `#topic/<id>`, so a reload or a link
+lands on the same Topic. Deleting a Topic asks for confirmation first, and its
+Sources go with it.
+
+## Tools
+
+The Plugin Page and other Plugins use the same tools. A Topic is named by its
+id. Each refusal is a JSON-RPC error with a sentence.
+
+| Tool           | Arguments                              | What it answers                                         |
+| -------------- | -------------------------------------- | ------------------------------------------------------- |
+| `list_topics`  | none                                   | `topics`: each Topic with `sourceCount`, `lastSweepAt` and `lastSweepState` (null until it is swept). |
+| `get_topic`    | `id`                                   | `topic`: its name, question, `sources` in order, and `sweeps` from new to old. |
+| `create_topic` | `name`, `question` (optional), `sources` (optional list of addresses) | `topic`, as `get_topic` gives it. |
+| `update_topic` | `id`, and any of `name`, `question`, `sources` | `topic`. What is not given is kept; `sources` replaces the whole list. |
+| `delete_topic` | `id`                                   | `deleted`: the id and name of the Topic. Its Sources go with it. |
+
+An address that is not `http:` or `https:` is refused with a sentence that
+names it, and nothing is saved. That refusal also carries
+`data: { field: "sources", index, address }`, with `index` counted from 0, so
+a caller can point at the exact Source.
+
 ## Running it
 
 `./mcp` is the Plugin Server, as the Host runs it: MCP over stdio.

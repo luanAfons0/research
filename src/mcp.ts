@@ -51,10 +51,15 @@ type Message = {
 /**
  * A caller's mistake, as a sentence the caller can act on. It is refused as
  * bad arguments rather than as this Plugin Server's own fault, so whoever
- * reads the answer knows which side has to change.
+ * reads the answer knows which side has to change. `data`, when given, goes
+ * out as the JSON-RPC error's own `data`, for a caller that points at the
+ * exact part to change, as the Plugin Page does under its Sources.
  */
-export function badInput(sentence: string): Error {
-  return Object.assign(new Error(sentence), { code: INVALID_PARAMS });
+export function badInput(sentence: string, data?: unknown): Error {
+  return Object.assign(new Error(sentence), {
+    code: INVALID_PARAMS,
+    ...(data === undefined ? {} : { data }),
+  });
 }
 
 /**
@@ -94,8 +99,8 @@ function answer(id: string | number, result: unknown): void {
   reply({ jsonrpc: '2.0', id, result });
 }
 
-function refuse(id: string | number, code: number, message: string): void {
-  reply({ jsonrpc: '2.0', id, error: { code, message } });
+function refuse(id: string | number, code: number, message: string, data?: unknown): void {
+  reply({ jsonrpc: '2.0', id, error: { code, message, ...(data === undefined ? {} : { data }) } });
 }
 
 function dispatch(
@@ -135,7 +140,7 @@ function dispatch(
         refuse(id, METHOD_NOT_FOUND, `no such method: ${message.method}`);
     }
   } catch (fault) {
-    refuse(id, codeOf(fault), sentenceFor(fault));
+    refuse(id, codeOf(fault), sentenceFor(fault), dataOf(fault));
   }
 }
 
@@ -146,6 +151,10 @@ function described(tool: Tool): unknown {
 function codeOf(fault: unknown): number {
   const code = (fault as { code?: unknown } | null)?.code;
   return code === INVALID_PARAMS ? INVALID_PARAMS : INTERNAL_ERROR;
+}
+
+function dataOf(fault: unknown): unknown {
+  return (fault as { data?: unknown } | null)?.data;
 }
 
 /** Whatever was thrown, as a sentence rather than as a stack trace. */

@@ -10,17 +10,22 @@
 <body>
 <!-- Three panes: the Topics on the left, the Digest in the centre, the Sweeps
      and Extracts on the right. With the class "index", only the centre shows,
-     and it holds the list of Topics. -->
+     and it holds the list of Topics. The address fragment chooses the view:
+     "#" the list, "#new" a new Topic, "#topic/<id>" one Topic, and
+     "#topic/<id>/edit" its form. -->
 <div class="app index" id="app">
   <nav class="pane rail" id="rail" aria-label="Topics">
     <a class="brand" href="#"><span class="mark" aria-hidden="true"></span>research</a>
-    <div class="rail-head"><span>Topics</span></div>
+    <div class="rail-head"><span>Topics</span><button type="button" class="btn quiet" id="new-topic-rail" aria-label="New Topic"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button></div>
+    <div class="rail-topics" id="rail-topics"></div>
   </nav>
 
   <main class="pane main" id="main">
+    <!-- The Topic list, at "#". -->
     <div class="index-in" id="index">
       <div class="index-head">
         <a class="brand" href="#"><span class="mark" aria-hidden="true"></span>research</a>
+        <button type="button" class="btn go" id="new-topic" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>New Topic</button>
       </div>
 
       <!-- What is wrong, when the Plugin Server cannot be reached. -->
@@ -30,13 +35,72 @@
         <span class="why" id="trouble-why"></span>
       </div>
 
+      <div id="topic-list" hidden>
+        <h1>Topics</h1>
+        <div class="rows-head"><span>Topic</span><span>Sources</span><span>Last Sweep</span></div>
+        <ul class="rows" id="rows"></ul>
+      </div>
+
       <div class="empty" id="no-topics" hidden>
         <h2>No Topics yet</h2>
         <p>A Topic is one subject you research: a name, an optional question, and the pages to read. research reads each page and makes a Digest of what they say.</p>
+        <button type="button" class="btn go" id="new-topic-empty"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>New Topic</button>
       </div>
+    </div>
+
+    <!-- One Topic, at "#topic/<id>". -->
+    <div class="main-in" id="topic-view" hidden>
+      <header class="topic-head" id="topic-head">
+        <div><h1 id="topic-name"></h1><p class="question" id="topic-question"></p></div>
+        <div class="acts">
+          <button type="button" class="btn" id="edit"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg>Edit</button>
+          <button type="button" class="btn danger" id="delete"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M6 4.5V3h4v1.5M4 4.5l.7 9h6.6l.7-9"/></svg>Delete</button>
+        </div>
+      </header>
+
+      <!-- Deleting a Topic asks here first, in the page, never in a dialog of the browser's. -->
+      <div class="band confirm" id="confirm" role="alert" hidden>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M6 4.5V3h4v1.5M4 4.5l.7 9h6.6l.7-9"/></svg>
+        <span class="what" id="confirm-what"></span>
+        <span class="why" id="confirm-why"></span>
+        <span class="band-acts"><button type="button" class="btn danger solid" id="confirm-delete">Delete Topic</button><button type="button" class="btn" id="confirm-cancel">Cancel</button></span>
+      </div>
+
+      <div class="band fail" id="topic-trouble" role="alert" hidden>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg>
+        <span class="what">research cannot show this Topic</span>
+        <span class="why" id="topic-trouble-why"></span>
+      </div>
+
+      <section class="digest" id="digest" aria-label="Digest"></section>
+    </div>
+
+    <!-- A new Topic at "#new", or one Topic's form at "#topic/<id>/edit". -->
+    <div class="main-in" id="form-view" hidden>
+      <header class="topic-head"><div><h1 id="form-title"></h1></div></header>
+      <form class="form" id="form">
+        <div class="field">
+          <label for="f-name">Name</label>
+          <input class="input" id="f-name" placeholder="For example: Node 24 release" required>
+        </div>
+        <div class="field">
+          <label for="f-q">Question <span class="optional">(optional)</span></label>
+          <input class="input" id="f-q" placeholder="What do you want the Digest to answer?">
+          <span class="help">The Digest is written in the language of the question. With no question, it is written in Brazilian Portuguese.</span>
+        </div>
+        <div class="field">
+          <label for="f-src">Sources</label>
+          <textarea class="area" id="f-src" spellcheck="false" placeholder="One address on each line, starting with https://"></textarea>
+          <span class="help" id="f-src-help">research reads each page once, and no page it links to.</span>
+          <span class="field-error" id="f-src-err" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg><span id="f-src-err-text"></span></span>
+        </div>
+        <span class="field-error" id="form-error" role="alert" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg><span id="form-error-text"></span></span>
+        <div class="acts"><button type="submit" class="btn go" id="form-submit"></button><button type="button" class="btn" id="form-cancel">Cancel</button></div>
+      </form>
     </div>
   </main>
 
+  <!-- The Sweeps and the Extracts of the Topic come with Sweeps. -->
   <aside class="pane side" id="side" aria-label="Sweeps and Extracts"></aside>
 </div>
 <script src="rpc.js"></script>

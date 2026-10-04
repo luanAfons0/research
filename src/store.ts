@@ -21,7 +21,29 @@ export type Store = DatabaseSync;
  * Each step moves the file up one version. A step is never edited once it
  * has shipped; a change to the schema is a new step at the end.
  */
-const STEPS: readonly string[] = [];
+const STEPS: readonly string[] = [
+  // A Topic and its Sources, in the order the operator gave them. Deleting a
+  // Topic deletes its Sources. A Sweep and its Extracts come in a later step,
+  // with their own ON DELETE CASCADE to a Topic: an Extract keeps a copy of
+  // the address it read, so no Extract points at a Source, and deleting a
+  // Source never reaches a Sweep. The foreign keys hold because every open
+  // turns them on.
+  `
+  CREATE TABLE topics (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL CHECK (name <> ''),
+    question TEXT NOT NULL DEFAULT '',
+    made_at TEXT NOT NULL
+  );
+  CREATE TABLE sources (
+    id INTEGER PRIMARY KEY,
+    topic_id INTEGER NOT NULL REFERENCES topics (id) ON DELETE CASCADE,
+    address TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    UNIQUE (topic_id, position)
+  );
+  `,
+];
 
 /** Open `research.db`, making it when it is not there, and bring it up to the current version. */
 export function openStore(path: string = FILE): Store {
@@ -59,4 +81,9 @@ export function within<T>(store: Store, work: () => T): T {
     store.exec('ROLLBACK');
     throw fault;
   }
+}
+
+/** This moment, as the Store writes a time: ISO 8601, in UTC. */
+export function now(): string {
+  return new Date().toISOString();
 }

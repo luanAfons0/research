@@ -87,6 +87,8 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .topic-link .name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topic-link .count { font-size: 12px; color: var(--faint); }
 .topic-link .last { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+/* The links are drawn into one container, which lays out as if it were not there. */
+.rail-topics { display: contents; }
 
 /* State words: always words, colour only adds to them */
 .state { font-weight: 600; }
@@ -97,6 +99,10 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 /* Centre */
 .main { background: var(--pane); }
 .main-in { max-width: 760px; margin: 0 auto; padding: 28px 40px 64px; }
+.topic-head { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-start; justify-content: space-between; }
+.topic-head h1 { font: 600 26px/1.2 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.question { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+.question.none { color: var(--faint); font-style: italic; }
 .acts { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* Bands: running, failed, confirm */
@@ -107,7 +113,7 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .band svg.i { margin-top: 2px; }
 .band .what { font-weight: 600; }
 .band .why { grid-column: 2; color: var(--muted); font-size: 14px; }
-.band .why code, .why code { font: 13px var(--mono); }
+.band .why code, .why code, .field-error code { font: 13px var(--mono); }
 .band .band-acts { grid-row: 1 / span 2; grid-column: 3; display: flex; gap: 8px; align-self: center; }
 .band.run { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--accent-soft); }
 .band.run svg.i { color: var(--accent); }
@@ -121,15 +127,48 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .side h2 { display: flex; align-items: baseline; justify-content: space-between; font: 600 13px/1.2 var(--sans); color: var(--muted); margin: 0 0 8px; letter-spacing: .02em; }
 .side h2 small { font-weight: 400; color: var(--faint); }
 
+/* Digest: an empty frame until a Sweep makes one */
+.digest { margin-top: 28px; }
+
 /* Index view */
 .app.index .main { background: var(--canvas); }
 .index-in { max-width: 920px; margin: 0 auto; padding: 32px 32px 64px; }
 .index-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .index-head .brand { padding: 0; }
 .index-head h1 { font: 600 24px/1.2 var(--display); margin: 0; }
+.rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.row a {
+  display: grid; grid-template-columns: minmax(0, 1fr) 90px 190px; gap: 4px 20px; align-items: baseline; padding: 14px 8px;
+  border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; transition: background-color 160ms var(--ease);
+}
+@media (hover: hover) and (pointer: fine) { .row a:hover { background: var(--pane); } }
+.row .t { font-weight: 600; }
+.row .q { grid-column: 1; grid-row: 2; color: var(--muted); font-size: 14px; }
+.row .q.none { color: var(--faint); font-style: italic; }
+.row .c { color: var(--muted); font-size: 14px; grid-row: 1 / span 2; }
+.row .s { font-size: 14px; grid-row: 1 / span 2; }
+.row .s .at { color: var(--faint); }
+.rows-head { display: grid; grid-template-columns: minmax(0, 1fr) 90px 190px; gap: 20px; padding: 0 8px 6px; font-size: 12px; color: var(--faint); }
 .empty { max-width: 46ch; padding: 48px 0; }
 .empty h2 { font: 600 20px/1.3 var(--display); margin: 0 0 8px; }
 .empty p { color: var(--muted); margin: 0 0 18px; }
+
+/* Topic form */
+.form { display: grid; gap: 20px; max-width: 62ch; margin-top: 22px; }
+.field { display: grid; gap: 6px; }
+.field label { font-weight: 600; font-size: 14px; }
+.field label .optional { font-weight: 400; color: var(--faint); }
+.field .help { font-size: 13px; color: var(--muted); }
+.input, .area {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--pane); color: var(--ink);
+  font: 15px/1.45 var(--sans); transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+.area { min-height: 11em; font: 14px/1.6 var(--mono); resize: vertical; }
+.input:focus, .area:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.area[aria-invalid="true"] { border-color: var(--fail); }
+.field-error { display: flex; gap: 6px; align-items: flex-start; color: var(--fail); font-size: 14px; }
+.field-error svg.i { margin-top: 2px; }
+.form .acts { padding-top: 4px; }
 
 /* Narrow: one column, the rail becomes a top bar, the side pane follows the Digest */
 @media (max-width: 1080px) { .app { grid-template-columns: 220px minmax(0, 1fr) 290px; } .main-in { padding-inline: 28px; } }
@@ -143,6 +182,8 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
   .topic-link { flex: none; max-width: 220px; }
   .main-in, .index-in { padding: 20px 16px 40px; }
   .side { border-left: 0; border-top: 1px solid var(--line); padding: 20px 16px 96px; }
+  .row a, .rows-head { grid-template-columns: minmax(0, 1fr) auto; }
+  .row .c { display: none; } .rows-head span:nth-child(2) { display: none; }
   .band { grid-template-columns: auto minmax(0, 1fr); }
   .band .band-acts { grid-row: auto; grid-column: 2; align-self: start; margin-top: 6px; }
 }

@@ -57,6 +57,7 @@ mcp            the executable the Host runs: find a Node 24, run src/main.ts.
 src/           the Plugin Server. Every file is one job.
   main.ts      start-up: open research.db, serve the tools, close on stdin's end.
   store.ts     research.db: open it, move it up to the current schema version.
+  topics.ts    make, change, list and delete Topics and their Sources.
   tools.ts     the tools this Plugin ships, for the Page and for other Plugins.
   mcp.ts       the one connection to the Host: MCP over stdio.
 web/           the Plugin Page, as the Host serves it.
@@ -107,6 +108,13 @@ docs/agents/   how an agent works in this repo. See "Agent skills" below.
 - **The Page as bytes**: `tests/page.test.ts` reads `web/` off disk, and runs
   `rpc.js` in a `node:vm` context against the real Plugin Server.
   `tests/markdown.test.ts` runs `web/markdown.js` the same way.
+- **The Page as a person uses it**: `tests/helpers/page.ts` runs the scripts
+  `index.html` loads in one `node:vm` context, against the real Plugin Server,
+  with a small stand-in for the part of a browser the page touches: the
+  elements `index.html` declares, their events, and the address fragment. A
+  test opens an address, presses buttons and types, and reads what a person
+  would see. An element the page needs is declared in `index.html`, never
+  made by the script, so this stand-in and the id check both see it.
 - A test name is a sentence about behaviour:
   `'with no Node 24 anywhere, the wrapper says so in one sentence that names RESEARCH_NODE'`.
 
