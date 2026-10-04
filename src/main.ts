@@ -33,12 +33,17 @@ const { settings, store } = (() => {
   }
 })();
 
-// Stopping aborts every read of every running Sweep, before the file closes
-// under them. Those Sweeps stay as they are, and the next start fails them.
+// Stopping aborts every read of every running Sweep, and stops every Digest
+// command, before the file closes under them. Those Sweeps stay as they are,
+// and the next start fails them.
 const stopping = new AbortController();
 
 await serve(
-  toolsFor({ store, reading: { timeoutMs: settings.fetchTimeoutMs, stopping: stopping.signal } }),
+  toolsFor({
+    store,
+    reading: { timeoutMs: settings.fetchTimeoutMs, stopping: stopping.signal },
+    digesting: { command: settings.digestCommand, timeoutMs: settings.digestTimeoutMs },
+  }),
 );
 stopping.abort();
 store.close();

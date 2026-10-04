@@ -11,6 +11,8 @@
  * - `/moved` redirects to `/article.html`;
  * - `/silent` takes the request and never answers;
  * - `/large` answers a page larger than research reads;
+ * - `/long` answers plain text longer than a Digest's prompt takes of one
+ *   Extract, which ends with the line `The last line of the long Source.`;
  * - `/held/<file>` waits until the test calls `release()`, then serves the file.
  *
  * It records each request with the User-Agent it came with, and the most
@@ -32,6 +34,11 @@ const TYPES: Readonly<Record<string, string>> = {
   '.txt': 'text/plain; charset=utf-8',
   '.pdf': 'application/pdf',
 };
+
+/** What `/long` answers: about 40,000 characters, and a last line to look for. */
+export const LONG_TEXT =
+  Array.from({ length: 1500 }, (_, at) => `Line ${at + 1} of the long Source.`).join('\n') +
+  '\nThe last line of the long Source.\n';
 
 /** One request the server took. */
 export type Request = {
@@ -95,6 +102,9 @@ export async function serveSources(t: TestContext): Promise<Sources> {
         if (response.destroyed) return;
       }
       response.end();
+    } else if (path === '/long') {
+      response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+      response.end(LONG_TEXT);
     } else if (path.startsWith('/held/')) {
       if (!released) await new Promise<void>((go) => waiting.push(go));
       await serveFile(path.slice('/held/'.length), response);

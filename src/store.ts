@@ -72,6 +72,12 @@ const STEPS: readonly string[] = [
     PRIMARY KEY (sweep_id, n)
   );
   `,
+  // Which Extracts the last Digest's prompt cut, and how many characters it
+  // took of each. Null is not cut: the whole Extract went to the model, or
+  // none of it did. The Extract's own text is always kept whole (ADR-0002).
+  `
+  ALTER TABLE extracts ADD COLUMN cut_at INTEGER;
+  `,
 ];
 
 /** Open `research.db`, making it when it is not there, and bring it up to the current version. */

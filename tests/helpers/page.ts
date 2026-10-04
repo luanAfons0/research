@@ -21,7 +21,9 @@
  *
  * - an item the page draws inside a declared element (a Sweep, an Extract)
  *   is pressed with `pressIn`, which sends the click to that element's
- *   listeners with the item as its target, as a browser bubbles it;
+ *   listeners with the item as its target, as a browser bubbles it; the page
+ *   finds one with `querySelector` on a declared element, for a selector of
+ *   one attribute, and a test reads which ones it scrolled into view;
  * - a wait of a second or more, such as the page's poll while a Sweep runs,
  *   passes only when a test says so with `later()`, so no test sleeps for it.
  */
@@ -85,6 +87,8 @@ export type DrawnItem = {
   getAttribute(name: string): string | null;
   hasAttribute(name: string): boolean;
   closest(selector: string): DrawnItem | null;
+  focus(): void;
+  scrollIntoView(options?: unknown): void;
 };
 
 type Listener = (event: PageEvent) => unknown;
@@ -113,6 +117,8 @@ export type PageElement = {
   getAttribute(name: string): string | null;
   removeAttribute(name: string): void;
   addEventListener(type: string, listener: Listener): void;
+  /** The first item drawn inside it that a selector of one attribute matches. */
+  querySelector(selector: string): DrawnItem | null;
   focus(): void;
   /** Press it, as a person does. */
   click(): void;
@@ -139,6 +145,11 @@ export type OpenPage = {
   later(): void;
   /** The element that has focus, or null. */
   focused(): PageElement | null;
+  /**
+   * Each drawn item the page scrolled into view, in order, as the element it
+   * is in and the selector it was found by: `#extracts [data-x="2"]`.
+   */
+  scrolled(): readonly string[];
   /** Every tool the page has called, by name, in order. */
   called(): readonly string[];
   /** Wait until no request is in flight and no address change is pending. */
@@ -170,6 +181,7 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
   let pendingHash = 0;
   let fragment = hash === '' || hash.startsWith('#') ? hash : `#${hash}`;
   let focused: PageElement | null = null;
+  const scrolls: string[] = [];
 
   const fire = (listeners: Map<string, Listener[]>, event: PageEvent): void => {
     for (const listener of listeners.get(event.type) ?? []) listener(event);
@@ -216,6 +228,17 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
       removeAttribute: (name) => void attributes.delete(name),
       addEventListener: (type, listener) =>
         void listeners.set(type, [...(listeners.get(type) ?? []), listener]),
+      querySelector: (selector) => {
+        const wanted = /^\[([^\]=]+)(?:="([^"]*)")?\]$/.exec(selector);
+        if (wanted === null) throw new Error(`querySelector knows no selector ${selector}.`);
+        const name = wanted[1] ?? '';
+        const item = drawnIn(element.innerHTML).find((attributes) =>
+          wanted[2] === undefined ? attributes.has(name) : attributes.get(name) === wanted[2],
+        );
+        return item === undefined
+          ? null
+          : drawnItem(item, () => void scrolls.push(`#${id} ${selector}`));
+      },
       focus: () => {
         focused = element;
       },
@@ -263,6 +286,8 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
   const context = createContext({
     console,
     URL,
+    // A test's browser asks for no reduced motion.
+    matchMedia: () => ({ matches: false }),
     setTimeout: pageSetTimeout,
     clearTimeout: pageClearTimeout,
     location,
@@ -315,25 +340,15 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
     hash: () => fragment,
     key: (name) => fire(documentListeners, eventFor('keydown', elements.get('app')!, name)),
     pressIn: (id, attribute, value) => {
-      const markup = opened.byId(id).innerHTML;
-      const item = [...markup.matchAll(/<[a-z][a-z0-9]*\b([^>]*)>/g)]
-        .map((tag) => attributesOf(tag[1] ?? ''))
-        .find((attributes) => attributes.get(attribute) === value);
+      const item = drawnIn(opened.byId(id).innerHTML).find(
+        (attributes) => attributes.get(attribute) === value,
+      );
       if (item === undefined) throw new Error(`#${id} shows nothing with ${attribute}="${value}".`);
       // A browser sends no click to a disabled button.
       if (item.has('disabled')) return;
-      const drawn: DrawnItem = {
-        getAttribute: (name) => item.get(name) ?? null,
-        hasAttribute: (name) => item.has(name),
-        closest: (selector) => {
-          const wanted = /^\[([^\]=]+)\]$/.exec(selector);
-          if (wanted === null) throw new Error(`pressIn knows no selector ${selector}.`);
-          return item.has(wanted[1] ?? '') ? drawn : null;
-        },
-      };
       fire(listenersOf.get(id)!, {
         type: 'click',
-        target: drawn,
+        target: drawnItem(item, () => undefined),
         preventDefault: () => undefined,
       });
     },
@@ -343,6 +358,7 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
       for (const run of due) run();
     },
     focused: () => focused,
+    scrolled: () => scrolls,
     called: () => called,
     settled: async () => {
       const start = Date.now();
@@ -360,6 +376,33 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
   };
   await opened.settled();
   return opened;
+}
+
+/** Every tag drawn in a piece of markup, as its attributes. */
+function drawnIn(markup: string): Map<string, string>[] {
+  return [...markup.matchAll(/<[a-z][a-z0-9]*\b([^>]*)>/g)].map((tag) =>
+    attributesOf(tag[1] ?? ''),
+  );
+}
+
+/**
+ * One drawn tag as a click's target or a query's answer sees it. `closest`
+ * takes a selector of one attribute, such as `[data-x]`, and matches the item
+ * itself or nothing.
+ */
+function drawnItem(attributes: Map<string, string>, onScroll: () => void): DrawnItem {
+  const drawn: DrawnItem = {
+    getAttribute: (name) => attributes.get(name) ?? null,
+    hasAttribute: (name) => attributes.has(name),
+    closest: (selector) => {
+      const wanted = /^\[([^\]=]+)\]$/.exec(selector);
+      if (wanted === null) throw new Error(`closest knows no selector ${selector}.`);
+      return attributes.has(wanted[1] ?? '') ? drawn : null;
+    },
+    focus: () => undefined,
+    scrollIntoView: onScroll,
+  };
+  return drawn;
 }
 
 /** The attributes of one tag, by name, with the markup's escapes undone. */

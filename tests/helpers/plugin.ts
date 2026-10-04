@@ -156,7 +156,9 @@ export async function startPluginServer(
 
   const child = spawn(EXECUTABLE, [], {
     cwd: directory,
-    env: { ...process.env, ...options.env },
+    // A Digest command the person running the tests has set is not the
+    // test's: a test that wants one gives it.
+    env: { ...process.env, RESEARCH_DIGEST_COMMAND: '', ...options.env },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 

@@ -10,10 +10,21 @@
  * that: a Sweep that runs is one whose state is `reading` or `digesting`.
  *
  * The tool that starts a Sweep answers at once with its id. The reading goes
- * on after the answer, at most a few Sources at a time, and every state change
- * is written as it happens, so `get_sweep` shows the progress and a Plugin
- * Server that stops leaves a Sweep the next start can see did not end.
+ * on after the answer, at most a few Sources at a time, then the Digest is
+ * made by a command (ADR-0002), and every state change is written as it
+ * happens, so `get_sweep` shows the progress and a Plugin Server that stops
+ * leaves a Sweep the next start can see did not end. Making the Digest again
+ * answers at once too, because a model on a CPU takes minutes.
  */
+import {
+  checkCommand,
+  COMMAND_FAILED,
+  CUT_AT,
+  promptFor,
+  runCommand,
+  type DigestTopic,
+  type PromptExtract,
+} from './digest.ts';
 import { badInput, sentenceFor } from './mcp.ts';
 import { readSource, type ReadOptions } from './reader.ts';
 import { now, within, type Store } from './store.ts';
@@ -23,8 +34,6 @@ export const MOST_AT_ONCE = 4;
 
 /** Why a Sweep failed when every Source failed. */
 export const NO_SOURCE_READ = 'no Source could be read';
-/** Why a Sweep failed when there is no command to make its Digest with (ADR-0002). */
-export const NO_DIGEST_COMMAND = 'no Digest command is set in RESEARCH_DIGEST_COMMAND';
 /** Why a Sweep failed when the Plugin Server stopped while it ran. */
 export const STOPPED = 'the Plugin Server stopped before the Sweep ended';
 /** Why an Extract has no text when the Plugin Server stopped before it was read. */
@@ -35,6 +44,13 @@ export type Sweeping = {
   readonly store: Store;
   /** How each Source is read, and the signal that stops every read. */
   readonly reading: ReadOptions;
+  /** How the Digest is made (ADR-0002). */
+  readonly digesting: {
+    /** The command in RESEARCH_DIGEST_COMMAND, or null when none is set. */
+    readonly command: string | null;
+    /** How long it may run before it is stopped. */
+    readonly timeoutMs: number;
+  };
 };
 
 /** One Sweep without its Extracts, as get_topic lists it. */
@@ -74,6 +90,10 @@ export type ExtractView = {
   readonly contentType: string | null;
   /** When it was read, or null while it waits. */
   readonly readAt: string | null;
+  /** Whether the prompt of the last Digest took only the start of its text. */
+  readonly cut: boolean;
+  /** How many characters of it that prompt took, when it was cut, or null. */
+  readonly cutAt: number | null;
 };
 
 /** One Sweep, whole, as get_sweep gives it. */
@@ -109,6 +129,7 @@ type ExtractRow = {
   readonly reason: string | null;
   readonly content_type: string | null;
   readonly read_at: string | null;
+  readonly cut_at: number | null;
 };
 
 const SWEEP_COLUMNS =
@@ -190,36 +211,124 @@ async function run(sweeping: Sweeping, id: number): Promise<void> {
     };
     await Promise.all(Array.from({ length: Math.min(MOST_AT_ONCE, waiting.length) }, worker));
     if (stopped()) return;
-    afterReading(store, id);
+    if (withText(store, id).length === 0) {
+      end(store, id, 'failed', NO_SOURCE_READ);
+      return;
+    }
+    store
+      .prepare("UPDATE sweeps SET state = 'digesting' WHERE id = ? AND state = 'reading'")
+      .run(id);
+    await makeDigest(sweeping, id);
   } catch (fault) {
-    if (stopped()) return;
-    process.stderr.write(`research: Sweep ${id} failed: ${sentenceFor(fault)}\n`);
-    end(store, id, 'failed', sentenceFor(fault));
+    failLoudly(sweeping, id, fault);
   }
 }
 
-/** Every Source is read: the Sweep goes on to its Digest, or fails for want of text. */
-function afterReading(store: Store, id: number): void {
-  const counted = store
+/** A fault that is research's own ends the Sweep, and is said once on stderr. */
+function failLoudly(sweeping: Sweeping, id: number, fault: unknown): void {
+  if (sweeping.reading.stopping.aborted) return;
+  process.stderr.write(`research: Sweep ${id} failed: ${sentenceFor(fault)}\n`);
+  end(sweeping.store, id, 'failed', sentenceFor(fault));
+}
+
+/** The Extracts of a Sweep that have text, which are the ones a Digest is made from. */
+function withText(store: Store, id: number): PromptExtract[] {
+  return store
     .prepare(
-      "SELECT COUNT(*) AS read FROM extracts WHERE sweep_id = ? AND state IN ('read', 'thin')",
+      'SELECT n, address, text FROM extracts ' +
+        "WHERE sweep_id = ? AND text IS NOT NULL AND text <> '' ORDER BY n",
     )
-    .get(id) as { read: number };
-  if (counted.read === 0) {
-    end(store, id, 'failed', NO_SOURCE_READ);
-    return;
-  }
-  makeDigest(store, id);
+    .all(id) as PromptExtract[];
 }
 
 /**
- * Make the Digest of a Sweep whose Sources are read. This is where the Sweep
- * becomes `digesting`, runs the Digest command and ends `done`. With no Digest
- * command, it ends `failed` and keeps every Extract, so the text of each
- * Source is there without a model (ADR-0002).
+ * Make the Digest of a Sweep that is `digesting`: run the Digest command on
+ * its prompt, and end the Sweep `done` with the Digest, or `failed` with why.
+ * With no Digest command, it ends `failed` and keeps every Extract, so the
+ * text of each Source is there without a model (ADR-0002). A new Digest
+ * replaces the old one; a failure keeps the old one.
  */
-function makeDigest(store: Store, id: number): void {
-  end(store, id, 'failed', NO_DIGEST_COMMAND);
+async function makeDigest(sweeping: Sweeping, id: number): Promise<void> {
+  const { store, digesting, reading } = sweeping;
+  const checked = checkCommand(digesting.command);
+  if ('reason' in checked) {
+    end(store, id, 'failed', checked.reason);
+    return;
+  }
+  const topic = store
+    .prepare(
+      'SELECT topics.name, topics.question FROM sweeps ' +
+        'JOIN topics ON topics.id = sweeps.topic_id WHERE sweeps.id = ?',
+    )
+    .get(id) as DigestTopic | undefined;
+  // The Topic, and the Sweep with it, was deleted while it was made.
+  if (topic === undefined) return;
+  const prompt = promptFor(topic, withText(store, id));
+  within(store, () => {
+    store.prepare('UPDATE extracts SET cut_at = NULL WHERE sweep_id = ?').run(id);
+    const mark = store.prepare('UPDATE extracts SET cut_at = ? WHERE sweep_id = ? AND n = ?');
+    for (const n of prompt.cut) mark.run(CUT_AT, id, n);
+  });
+  let digest: string;
+  try {
+    digest = await runCommand(checked.command, prompt.text, {
+      timeoutMs: digesting.timeoutMs,
+      stopping: reading.stopping,
+    });
+  } catch (fault) {
+    // A Plugin Server that is stopping has closed its data file.
+    if (reading.stopping.aborted) return;
+    end(store, id, 'failed', `${COMMAND_FAILED}: ${sentenceFor(fault)}`);
+    return;
+  }
+  if (reading.stopping.aborted) return;
+  const at = now();
+  store
+    .prepare(
+      "UPDATE sweeps SET state = 'done', reason = NULL, digest = ?, digest_at = ?, ended_at = ? " +
+        "WHERE id = ? AND state = 'digesting'",
+    )
+    .run(digest, at, at, id);
+}
+
+/**
+ * Make the Digest of a stored Sweep again, from the Extracts it keeps, with no
+ * new fetch, and hand the Sweep back at once, `digesting`. Refused while any
+ * Sweep of its Topic runs, because only one runs at a time; for a Sweep with
+ * no Extract that has text; and when there is no command to run.
+ */
+export function remakeDigest(sweeping: Sweeping, id: number): SweepSummary {
+  const { store } = sweeping;
+  within(store, () => {
+    const row = sweepRow(store, id);
+    if (runs(row.state)) {
+      throw badInput(`Sweep ${id} is running. Wait for it to end, then make the Digest again.`);
+    }
+    const running = store
+      .prepare(
+        "SELECT id FROM sweeps WHERE topic_id = ? AND state IN ('reading', 'digesting') LIMIT 1",
+      )
+      .get(row.topic_id) as { id: number } | undefined;
+    if (running !== undefined) {
+      throw badInput(
+        `Sweep ${running.id} of Topic ${row.topic_id} is running. ` +
+          'Wait for it to end, then make the Digest again.',
+      );
+    }
+    if (withText(store, id).length === 0) {
+      throw badInput(
+        `Sweep ${id} has no Extract with text, so there is nothing to make a Digest from. ` +
+          'Sweep the Topic again.',
+      );
+    }
+    const checked = checkCommand(sweeping.digesting.command);
+    if ('refusal' in checked) throw badInput(checked.refusal);
+    store
+      .prepare("UPDATE sweeps SET state = 'digesting', reason = NULL, ended_at = NULL WHERE id = ?")
+      .run(id);
+  });
+  void makeDigest(sweeping, id).catch((fault: unknown) => failLoudly(sweeping, id, fault));
+  return summaryOf(sweepRow(store, id));
 }
 
 /** End a Sweep that still runs, in this state, with this reason. */
@@ -347,5 +456,7 @@ function extractOf(row: ExtractRow): ExtractView {
     reason: row.reason,
     contentType: row.content_type,
     readAt: row.read_at,
+    cut: row.cut_at !== null,
+    cutAt: row.cut_at,
   };
 }

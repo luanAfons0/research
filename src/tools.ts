@@ -13,6 +13,7 @@ import {
   checkSweepId,
   deleteSweep,
   latestSweep,
+  remakeDigest,
   startSweep,
   sweepView,
   type Sweeping,
@@ -27,7 +28,7 @@ import {
   viewOf,
 } from './topics.ts';
 
-/** What the tools work over: the data file, and how a Sweep reads its Sources. */
+/** What the tools work over: the data file, how a Sweep reads, and how it makes its Digest. */
 export type Parts = Sweeping;
 
 const ID = { type: 'integer', description: 'The id of the Topic, from list_topics.' };
@@ -118,8 +119,9 @@ export function toolsFor(parts: Parts): readonly Tool[] {
       name: 'sweep_topic',
       description:
         'Start a Sweep of a Topic: each of its Sources is read once, as one page and no page ' +
-        'it links to. It answers at once with the new Sweep; get_sweep shows its progress. ' +
-        'It is refused while a Sweep of that Topic runs.',
+        'it links to, then the Digest is made from what was read. It answers at once with ' +
+        'the new Sweep; get_sweep shows its progress. It is refused while a Sweep of that ' +
+        'Topic runs.',
       inputSchema: BY_ID,
       call: (given) => {
         const topic = viewOf(store, checkTopicId('sweep_topic', given['id']));
@@ -130,9 +132,10 @@ export function toolsFor(parts: Parts): readonly Tool[] {
     {
       name: 'get_sweep',
       description:
-        'One Sweep: its state, why it failed, its Digest, and each Extract with its text or ' +
-        'the reason it has none. Give "id" for one Sweep, or "topic" alone for the latest ' +
-        'Sweep of that Topic (null when it was never swept).',
+        'One Sweep: its state, why it failed, its Digest and when it was made, and each ' +
+        'Extract with its text or the reason it has none, and whether the prompt cut it. ' +
+        'Give "id" for one Sweep, or "topic" alone for the latest Sweep of that Topic (null ' +
+        'when it was never swept).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -154,6 +157,21 @@ export function toolsFor(parts: Parts): readonly Tool[] {
         }
         const topic = viewOf(store, checkTopicId('get_sweep', given['topic']));
         return told({ sweep: latestSweep(store, topic.id) });
+      },
+    },
+
+    {
+      name: 'make_digest',
+      description:
+        'Make the Digest of a stored Sweep again, from the Extracts it keeps, with no new ' +
+        'fetch: after a change to the question or to the Digest command. It answers at once ' +
+        'with the Sweep, digesting; get_sweep shows when it ends. The new Digest replaces ' +
+        'the old one. It works on a failed Sweep too, and is refused while a Sweep of that ' +
+        'Topic runs.',
+      inputSchema: { type: 'object', properties: { id: SWEEP_ID }, required: ['id'] },
+      call: (given) => {
+        const id = checkSweepId('make_digest', 'id', given['id']);
+        return told({ sweep: remakeDigest(parts, id) });
       },
     },
 

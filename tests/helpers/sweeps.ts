@@ -3,7 +3,11 @@
  * Sweep, and wait for it to end. Each one goes through the tools, as the
  * Plugin Page and other Plugins do; nothing here reaches inside research.
  */
-import { structureOf, type Started } from './plugin.ts';
+import { join } from 'node:path';
+import { FIXTURES, structureOf, type Started } from './plugin.ts';
+
+/** The fixture Digest command, as RESEARCH_DIGEST_COMMAND names it. */
+export const DIGEST_COMMAND = join(FIXTURES, 'digest');
 
 /** One Extract, as get_sweep gives it. */
 export type Extract = {
@@ -16,6 +20,8 @@ export type Extract = {
   reason: string | null;
   contentType: string | null;
   readAt: string | null;
+  cut: boolean;
+  cutAt: number | null;
 };
 
 /** One Sweep, as get_sweep gives it. */

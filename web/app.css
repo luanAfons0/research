@@ -131,9 +131,34 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .digest { margin-top: 28px; }
 .digest-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .digest-head h2 { font: 600 13px/1.2 var(--sans); color: var(--muted); margin: 0; letter-spacing: .02em; }
-.digest-head .made { font-size: 13px; color: var(--faint); }
+.digest-head .made { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; color: var(--faint); }
+.digest-head .again { min-height: 28px; padding: 0 8px; font-size: 12px; }
 .prose { max-width: 66ch; font-size: 17px; line-height: 1.65; padding-top: 6px; }
-.prose p { margin: 0 0 12px; overflow-wrap: anywhere; }
+/* markdown.js draws a Digest's headings as h1 to h6; they read as the mock's h3. */
+.prose h1, .prose h2, .prose h3 { font: 600 19px/1.3 var(--display); margin: 26px 0 8px; text-wrap: balance; }
+.prose h4, .prose h5, .prose h6 { font: 600 16px/1.3 var(--display); margin: 20px 0 6px; }
+.prose > :first-child { margin-top: 0; }
+.prose p, .prose li { margin: 0 0 12px; overflow-wrap: anywhere; }
+.prose ul, .prose ol { padding-left: 1.2em; margin: 0 0 12px; }
+.prose li > ul, .prose li > ol { margin: 8px 0 0; }
+.prose code { white-space: nowrap; font: 0.86em var(--mono); background: var(--sunken); padding: 1px 5px; border-radius: 4px; }
+.prose pre { margin: 0 0 12px; padding: 10px 12px; background: var(--sunken); border-radius: var(--radius); overflow-x: auto; }
+.prose pre code { white-space: pre; padding: 0; background: none; }
+.prose blockquote { margin: 0 0 12px; padding-left: 14px; border-left: 3px solid var(--line); color: var(--muted); }
+.prose table { border-collapse: collapse; margin: 0 0 12px; font-size: 15px; display: block; overflow-x: auto; }
+.prose th, .prose td { border: 1px solid var(--line); padding: 4px 10px; text-align: left; }
+.prose a.bare { overflow-wrap: anywhere; }
+/* Each [n] of the Digest: a press lights Extract n on the right. */
+.cite {
+  display: inline-block; min-width: 1.6em; padding: 0 4px; margin: 0 1px; border-radius: 5px;
+  font: 600 12px/1.6 var(--sans); text-align: center; vertical-align: 2px; text-decoration: none;
+  color: var(--accent); background: var(--accent-soft); cursor: pointer; border: 0;
+  transition: background-color 160ms var(--ease), color 160ms var(--ease), transform 120ms var(--ease);
+}
+.cite:active { transform: scale(0.95); }
+@media (hover: hover) and (pointer: fine) { .cite:hover { background: var(--accent); color: var(--accent-ink); } }
+.cite[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.cite.bad { color: var(--fail); background: var(--fail-soft); }
 .x:active { transform: scale(0.99); }
 .no-digest { max-width: 56ch; color: var(--muted); padding: 18px 0; }
 .no-digest p { margin: 0 0 10px; }
@@ -192,6 +217,7 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .x[data-m="wait"] { opacity: .55; }
 .x[data-m="reading"] .mark { color: var(--accent); font-weight: 600; }
 .x.open { border-color: var(--accent); }
+.x.hit { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .side-foot { margin-top: 20px; font-size: 12px; color: var(--faint); }
 
 /* Index view */
@@ -253,7 +279,7 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
   .prose { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .btn:active, .x:active { transform: none; }
+  .btn:active, .cite:active, .x:active { transform: none; }
   .meter i { transition: none; }
   .meter.indeterminate i { width: 100%; opacity: .5; animation: none; }
 }

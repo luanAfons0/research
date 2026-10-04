@@ -93,11 +93,15 @@
         <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg>
         <span class="what" id="failed-what"></span>
         <span class="why" id="failed-why"></span>
+        <span class="band-acts" id="failed-acts" hidden><button type="button" class="btn" id="digest-again">Make the Digest again</button></span>
       </div>
 
+      <!-- The Digest as Markdown. Each [n] in it is a button: a press lights
+           Extract n on the right, and a second press puts the light out. -->
       <section class="digest" id="digest" aria-label="Digest" hidden>
-        <div class="digest-head"><h2>Digest</h2><span class="made" id="digest-made"></span></div>
-        <div class="no-digest"><p id="digest-words"></p></div>
+        <div class="digest-head"><h2>Digest</h2><span class="made"><span id="digest-made"></span><button type="button" class="btn quiet again" id="digest-again-head" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>Make the Digest again</button></span></div>
+        <div class="prose" id="digest-text" hidden></div>
+        <div class="no-digest" id="no-digest"><p id="digest-words"></p></div>
         <div class="skeleton" id="digest-skeleton" aria-hidden="true" hidden><i></i><i></i><i></i><i></i><i></i></div>
       </section>
      </div>
@@ -110,6 +114,7 @@
           <p class="addr-full" id="extract-address"></p>
           <p><span id="extract-when"></span> <a id="extract-source" href="#" target="_blank" rel="noopener">Open the Source <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M9 2.5h4.5V7M13.5 2.5L7 9M11.5 9.5v4h-9v-9h4"/></svg></a></p>
         </header>
+        <p class="note warn" id="extract-cut" hidden><strong>Cut for the model.</strong> <span id="extract-cut-why"></span></p>
         <p class="note warn" id="extract-thin" hidden><strong>Little text.</strong> <span id="extract-thin-why"></span></p>
         <p class="note fail" id="extract-failed" hidden><strong id="extract-failed-what"></strong> research could not read this Source, so it has no text. Check the address, or remove it from the Topic.</p>
         <div class="prose" id="extract-text"></div>
@@ -161,6 +166,7 @@
   </aside>
 </div>
 <script src="rpc.js"></script>
+<script src="markdown.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

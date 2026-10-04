@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+// A fixture Digest command: it reads the prompt on stdin the way a model
+// would, keeps a copy where RESEARCH_TEST_PROMPT_LOG says, and prints a fixed
+// Digest that cites Sources 1 and 2. It thinks out loud in a <think> block and
+// wraps its answer in a code fence, as some models do, so a test can see
+// research remove both.
+//
+// Three variables bend it:
+// - RESEARCH_TEST_DIGEST_FAIL: it fails the way a command with no model does,
+//   with lines on stderr and a non-zero exit.
+// - RESEARCH_TEST_DIGEST_HOLD: it says a line on stderr, then waits until the
+//   file this names exists before it answers, so a test can see a Sweep
+//   `digesting`. It gives up after ten seconds, so it never outlives a test.
+// - RESEARCH_TEST_DIGEST_EMPTY: it prints nothing at all.
+import { existsSync, writeFileSync } from 'node:fs';
+
+let prompt = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => (prompt += chunk));
+process.stdin.on('end', async () => {
+  if (process.env.RESEARCH_TEST_PROMPT_LOG) {
+    writeFileSync(process.env.RESEARCH_TEST_PROMPT_LOG, prompt);
+  }
+  if (process.env.RESEARCH_TEST_DIGEST_FAIL) {
+    process.stderr.write('pulling manifest\nloading the model\nError: model "nada" not found\n');
+    process.exit(3);
+  }
+  const hold = process.env.RESEARCH_TEST_DIGEST_HOLD;
+  if (hold) {
+    process.stderr.write('loading the model\n');
+    const start = Date.now();
+    while (!existsSync(hold) && Date.now() - start < 10_000) {
+      await new Promise((later) => setTimeout(later, 20));
+    }
+  }
+  if (process.env.RESEARCH_TEST_DIGEST_EMPTY) return;
+  const sources = (prompt.match(/<source n="/g) || []).length;
+  const question = /^Question: (.*)$/m.exec(prompt)?.[1] ?? '';
+  process.stdout.write(
+    '<think>\nThe Sources disagree. I will not say so.\n</think>\n' +
+      '```markdown\n' +
+      '## What changed\n\n' +
+      '- Node 24 ships **V8 13.6**. [1]\n' +
+      '- npm 11 comes with it, and <b>no</b> markup gets through. [1][2]\n\n' +
+      `The prompt had ${sources} Sources. The question was: ${question}\n` +
+      '```\n',
+  );
+});

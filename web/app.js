@@ -6,7 +6,11 @@
    Notice lands on the same place: "#" is the Topic list, "#new" a new Topic,
    "#topic/<id>" one Topic, and "#topic/<id>/edit" its form. While a Sweep
    runs, the page asks again every few seconds, so the band, the Extracts, the
-   rail and the Topic list show where it is. */
+   rail and the Topic list show where it is.
+
+   The Digest is drawn by markdown.js, which escapes every character before it
+   reads any Markdown, so a Digest can never become markup. Each [n] in it is
+   then drawn as a button that lights Extract n on the right. */
 'use strict';
 
 /** The words and the colour class of each state a last Sweep can be in. */
@@ -29,6 +33,9 @@ const ICONS = {
   info: '<circle cx="8" cy="8" r="6.2"/><path d="M8 7.2v4M8 4.9v.1"/>',
   check: '<path d="M3 8.5l3.2 3L13 4.5"/>',
   dot: '<circle cx="8" cy="8" r="2.4"/>',
+  cut:
+    '<circle cx="4.5" cy="11.5" r="2"/><circle cx="11.5" cy="11.5" r="2"/>' +
+    '<path d="M5.8 10L12 2.5M10.2 10L4 2.5"/>',
 };
 
 /**
@@ -38,6 +45,7 @@ const ICONS = {
  */
 const EXTRACT_MARKS = {
   read: { m: 'read', icon: 'check', opens: true },
+  cut: { m: 'cut', icon: 'cut', opens: true },
   thin: { m: 'thin', icon: 'info', opens: true },
   failed: { m: 'fail', icon: 'alert', opens: true },
   reading: { m: 'reading', icon: 'sweep', opens: false },
@@ -46,7 +54,8 @@ const EXTRACT_MARKS = {
 
 /**
  * What the failed band says for each reason a Sweep fails with: the line in
- * bold, and the sentence under it. A reason not listed here is shown as it is.
+ * bold, the sentence under it, and whether it offers to make the Digest
+ * again. A reason not listed here is shown as it is.
  */
 const FAILURES = {
   'no Digest command is set in RESEARCH_DIGEST_COMMAND': {
@@ -55,16 +64,25 @@ const FAILURES = {
       'Set <code>RESEARCH_DIGEST_COMMAND</code> where the Host starts, ' +
       'then make the Digest again. ' +
       kept,
+    again: true,
   },
   'no Source could be read': {
     what: 'Sweep failed: no Source could be read',
     why: () => 'Each Extract on the right says why. Check the addresses, then Sweep again.',
+    again: false,
   },
   'the Plugin Server stopped before the Sweep ended': {
     what: 'Sweep failed: the Plugin Server stopped before the Sweep ended',
     why: (kept) => ('Sweep again to read every Source. ' + kept).trim(),
+    again: false,
   },
 };
+
+/** How a reason starts when the Digest command failed; what it said follows. */
+const COMMAND_FAILED = 'the Digest command failed: ';
+
+/** Where the last lines of the command's stderr start, in that reason. */
+const IT_SAID = '. It said: ';
 
 /** The one element of index.html with this id. */
 function byId(id) {
@@ -154,6 +172,8 @@ let shownSweep = null;
 let chosen = null;
 /** The number of the Extract open in the centre, or null. */
 let opened = null;
+/** The number of the Extract a pressed [n] lights, or null. */
+let lit = null;
 /** Which drawing is the latest, so a slow answer never draws over a newer one. */
 let drawing = 0;
 /** The next time the page asks again while a Sweep runs. */
@@ -187,6 +207,8 @@ async function show(quiet) {
     }
   }
   if (turn !== drawing) return;
+  // The light of an [n] belongs to the Sweep it was pressed in.
+  if (sweep === null || shownSweep === null || sweep.id !== shownSweep.id) lit = null;
   shown = topic;
   shownSweep = sweep;
   draw(view, topics, topic, missing, sweep, quiet);
@@ -344,10 +366,37 @@ function drawBands(sweep) {
         : sweep.readCount === 1
           ? 'The 1 Extract this Sweep read is kept.'
           : 'The ' + sweep.readCount + ' Extracts this Sweep read are kept.';
-    const known = FAILURES[sweep.reason];
-    byId('failed-what').textContent = known ? known.what : 'Sweep failed: ' + sweep.reason;
-    byId('failed-why').innerHTML = known ? known.why(kept) : esc(kept);
+    const failure = failureOf(sweep.reason || '', kept);
+    byId('failed-what').textContent = failure.what;
+    byId('failed-why').innerHTML = failure.why;
+    byId('failed-acts').hidden = !(failure.again && sweep.readCount > 0);
   }
+}
+
+/** What the failed band says for a reason: its line, its sentence as markup, and its button. */
+function failureOf(reason, kept) {
+  const known = FAILURES[reason];
+  if (known) return { what: known.what, why: known.why(kept), again: known.again };
+  if (reason.startsWith(COMMAND_FAILED)) {
+    return {
+      what: 'Sweep failed: the Digest command failed',
+      why: commandSaid(reason.slice(COMMAND_FAILED.length)),
+      again: true,
+    };
+  }
+  return { what: 'Sweep failed: ' + reason, why: esc(kept), again: false };
+}
+
+/**
+ * Why the Digest command failed, as a sentence, and the last lines of its
+ * stderr as code: "It exited with 3. It said: <code>…</code>".
+ */
+function commandSaid(detail) {
+  const at = detail.indexOf(IT_SAID);
+  const why = at < 0 ? detail : detail.slice(0, at);
+  const sentence = esc(capital(why)).replace(/RESEARCH_DIGEST_COMMAND/g, '<code>$&</code>') + '.';
+  if (at < 0) return sentence;
+  return sentence + ' It said: <code>' + esc(detail.slice(at + IT_SAID.length)) + '</code>';
 }
 
 /** The Digest of the Sweep on the screen, or why there is none yet. */
@@ -355,7 +404,19 @@ function drawDigest(sweep) {
   byId('digest').hidden = sweep === null;
   if (sweep === null) return;
   const runs = running(sweep.state);
-  byId('digest-made').textContent = 'Sweep of ' + when(sweep.startedAt);
+  const has = !runs && sweep.digest !== null;
+  byId('digest-made').textContent = has
+    ? 'Made at ' +
+      clock(sweep.digestAt) +
+      ' from ' +
+      sweep.readCount +
+      ' of ' +
+      counted(sweep.sourceCount, 'Source')
+    : 'Sweep of ' + when(sweep.startedAt);
+  byId('digest-again-head').hidden = !(has && sweep.state === 'done');
+  byId('digest-text').hidden = !has;
+  byId('no-digest').hidden = has;
+  byId('digest-text').innerHTML = has ? digestMarkup(sweep) : '';
   byId('digest-skeleton').hidden = !runs;
   if (runs) byId('digest').setAttribute('aria-busy', 'true');
   else byId('digest').removeAttribute('aria-busy');
@@ -368,6 +429,46 @@ function drawDigest(sweep) {
   }
 }
 
+/**
+ * The Digest as markup: its Markdown read by markdown.js, then each [n], or
+ * [n, m], that names an Extract of this Sweep drawn as a button. Code is left
+ * as it is, and so is a number that names no Extract.
+ */
+function digestMarkup(sweep) {
+  let at = 0;
+  return renderMarkdown(sweep.digest)
+    .split(/(<pre[\s\S]*?<\/pre>|<code>[\s\S]*?<\/code>|<[^>]*>)/)
+    .map((part, index) => {
+      if (index % 2 === 1) return part;
+      return part.replace(/\[(\d+(?:\s*,\s*\d+)*)\]/g, (whole, list) => {
+        const numbers = list.split(',').map(Number);
+        const extracts = numbers.map((n) => sweep.extracts.find((x) => x.n === n));
+        if (extracts.some((extract) => !extract)) return whole;
+        return extracts.map((extract) => cite(extract, at++)).join('');
+      });
+    })
+    .join('');
+}
+
+/** One [n] of the Digest: a button that lights Extract n, red when it could not be read. */
+function cite(extract, at) {
+  return (
+    '<button type="button" class="cite' +
+    (extract.state === 'failed' ? ' bad' : '') +
+    '" data-n="' +
+    extract.n +
+    '" data-at="' +
+    at +
+    '" aria-label="Extract ' +
+    extract.n +
+    '" aria-pressed="' +
+    String(lit === extract.n) +
+    '">' +
+    extract.n +
+    '</button>'
+  );
+}
+
 /** One Extract, whole, in the centre. */
 function drawExtract(topic, sweep, extract) {
   const parts = partsOf(extract.address);
@@ -378,6 +479,14 @@ function drawExtract(topic, sweep, extract) {
   byId('extract-when').textContent =
     'Read at ' + clock(extract.readAt) + ' in the Sweep of ' + day(sweep.startedAt) + '.';
   byId('extract-source').setAttribute('href', extract.address);
+  byId('extract-cut').hidden = !extract.cut;
+  byId('extract-cut-why').textContent = extract.cut
+    ? 'The Digest was made from the first ' +
+      extract.cutAt.toLocaleString('en') +
+      ' of ' +
+      characters(extract.characters) +
+      '. The whole text is kept below.'
+    : '';
   byId('extract-thin').hidden = extract.state !== 'thin';
   byId('extract-thin-why').textContent =
     'The page gave only ' +
@@ -439,11 +548,12 @@ function drawSide(topic, sweep) {
 
 /** One Extract in the right pane, with its number, its address and its mark. */
 function extractItem(extract) {
-  const look = EXTRACT_MARKS[extract.state] || EXTRACT_MARKS.waiting;
+  const look = lookOf(extract);
   const parts = partsOf(extract.address);
   const mark = markOf(extract);
   return (
     '<li class="x' +
+    (lit === extract.n ? ' hit' : '') +
     (opened === extract.n ? ' open' : '') +
     '" data-m="' +
     look.m +
@@ -470,8 +580,22 @@ function extractItem(extract) {
   );
 }
 
+/** How an Extract is drawn: a read one the Digest's prompt cut has a mark of its own. */
+function lookOf(extract) {
+  if (extract.state === 'read' && extract.cut) return EXTRACT_MARKS.cut;
+  return EXTRACT_MARKS[extract.state] || EXTRACT_MARKS.waiting;
+}
+
 /** The words under an Extract: how much it read, or why it has no text. */
 function markOf(extract) {
+  if (extract.state === 'read' && extract.cut) {
+    return (
+      'Cut: the model read ' +
+      extract.cutAt.toLocaleString('en') +
+      ' of ' +
+      characters(extract.characters)
+    );
+  }
   if (extract.state === 'read') return characters(extract.characters);
   if (extract.state === 'thin') return extract.note;
   if (extract.state === 'failed') return capital(extract.reason || '');
@@ -622,6 +746,47 @@ async function sweepNow() {
   }
 }
 
+/** Make the Digest of the Sweep on the screen again, and show it being made. */
+async function digestAgain() {
+  if (shownSweep === null) return;
+  const buttons = [byId('digest-again'), byId('digest-again-head')];
+  for (const button of buttons) button.disabled = true;
+  byId('sweep-trouble').hidden = true;
+  try {
+    await call('make_digest', { id: shownSweep.id });
+    chosen = shownSweep.id;
+    await show(true);
+  } catch (fault) {
+    sweepTrouble('The Digest was not made', fault);
+  } finally {
+    for (const button of buttons) button.disabled = false;
+  }
+}
+
+/**
+ * A press on [n] in the Digest: light Extract n on the right and bring it
+ * into view, or put the light out when it is already lit, as the mock does.
+ */
+function onDigest(event) {
+  const pressed = event.target.closest('[data-n]');
+  if (!pressed || !shownSweep) return;
+  const n = Number(pressed.getAttribute('data-n'));
+  lit = lit === n ? null : n;
+  byId('digest-text').innerHTML = digestMarkup(shownSweep);
+  byId('extracts').innerHTML = shownSweep.extracts.map(extractItem).join('');
+  // The Digest was drawn again, so the focus goes back to the [n] pressed.
+  const again = byId('digest-text').querySelector(
+    '[data-at="' + pressed.getAttribute('data-at') + '"]',
+  );
+  if (again) again.focus();
+  if (lit === null) return;
+  const item = byId('extracts').querySelector('[data-x="' + n + '"]');
+  if (item) {
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    item.scrollIntoView({ block: 'nearest', behavior: still ? 'auto' : 'smooth' });
+  }
+}
+
 /** A press in the list of Sweeps: pick one, or delete it. */
 async function onSweeps(event) {
   const target = event.target;
@@ -651,8 +816,9 @@ function onExtracts(event) {
   const item = event.target.closest('[data-x]');
   if (!item || !shownSweep) return;
   const extract = shownSweep.extracts.find((x) => x.n === Number(item.getAttribute('data-x')));
-  if (!extract || !(EXTRACT_MARKS[extract.state] || EXTRACT_MARKS.waiting).opens) return;
+  if (!extract || !lookOf(extract).opens) return;
   opened = extract.n;
+  lit = null;
   const view = viewFor(location.hash);
   if (view.name !== 'topic') {
     go('#topic/' + shown.id);
@@ -685,6 +851,9 @@ async function start() {
   byId('confirm-delete').addEventListener('click', deleteShown);
   byId('sweeps').addEventListener('click', onSweeps);
   byId('extracts').addEventListener('click', onExtracts);
+  byId('digest-text').addEventListener('click', onDigest);
+  byId('digest-again').addEventListener('click', digestAgain);
+  byId('digest-again-head').addEventListener('click', digestAgain);
   byId('extract-back').addEventListener('click', (event) => {
     event.preventDefault();
     closeExtract();
