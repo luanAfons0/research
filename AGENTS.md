@@ -56,15 +56,18 @@ one they need through `tests/helpers/plugin.ts`.
 mcp            the executable the Host runs: find a Node 24, run src/main.ts.
 src/           the Plugin Server. Every file is one job.
   main.ts      start-up: read the settings, open research.db, fail the Sweeps
-               left running, serve the tools, close on stdin's end.
+               left running, serve the tools, send Notices once the handshake
+               offers them, close on stdin's end.
   settings.ts  what research reads from its environment.
   store.ts     research.db: open it, move it up to the current schema version.
   topics.ts    make, change, list and delete Topics and their Sources.
   sweeps.ts    start a Sweep, read its Sources in the background, record each state.
   reader.ts    one Source in, one Extract out: the fetch rules (ADR-0001).
   extractor.ts the readable text of an HTML page, with no parser to depend on.
+  digest.ts    the prompt of a Sweep, and the Digest command that reads it (ADR-0002).
+  notices.ts   the Notice a Sweep that ends sends, through a queue that keeps the gap.
   tools.ts     the tools this Plugin ships, for the Page and for other Plugins.
-  mcp.ts       the one connection to the Host: MCP over stdio.
+  mcp.ts       the one connection to the Host: MCP over stdio, both ways.
 web/           the Plugin Page, as the Host serves it.
   index.html   the three panes, drawn by app.js.
   rpc.js       request(), listTools() and call(): the Plugin Server, over POST rpc.

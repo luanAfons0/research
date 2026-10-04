@@ -15,6 +15,12 @@
  * happens, so `get_sweep` shows the progress and a Plugin Server that stops
  * leaves a Sweep the next start can see did not end. Making the Digest again
  * answers at once too, because a model on a CPU takes minutes.
+ *
+ * A Sweep that ends sends one Notice, and nothing else does (FirstMate
+ * ADR-0014): not its start, not the end of its reading, and not a Digest made
+ * again, which the operator asked for from the Plugin Page and watches there.
+ * A Sweep the last Plugin Server left running ends at the next start, and
+ * sends its Notice then, so that no one waits for a Digest that will not come.
  */
 import {
   checkCommand,
@@ -26,6 +32,7 @@ import {
   type PromptExtract,
 } from './digest.ts';
 import { badInput, sentenceFor } from './mcp.ts';
+import { noticeFor, type EndedSweep, type Notices } from './notices.ts';
 import { readSource, type ReadOptions } from './reader.ts';
 import { now, within, type Store } from './store.ts';
 
@@ -51,6 +58,8 @@ export type Sweeping = {
     /** How long it may run before it is stopped. */
     readonly timeoutMs: number;
   };
+  /** Where the Notice of a Sweep that ends goes. */
+  readonly notices: Notices;
 };
 
 /** One Sweep without its Extracts, as get_topic lists it. */
@@ -213,15 +222,46 @@ async function run(sweeping: Sweeping, id: number): Promise<void> {
     if (stopped()) return;
     if (withText(store, id).length === 0) {
       end(store, id, 'failed', NO_SOURCE_READ);
-      return;
+    } else {
+      store
+        .prepare("UPDATE sweeps SET state = 'digesting' WHERE id = ? AND state = 'reading'")
+        .run(id);
+      await makeDigest(sweeping, id);
     }
-    store
-      .prepare("UPDATE sweeps SET state = 'digesting' WHERE id = ? AND state = 'reading'")
-      .run(id);
-    await makeDigest(sweeping, id);
   } catch (fault) {
     failLoudly(sweeping, id, fault);
   }
+  tell(sweeping, id);
+}
+
+/**
+ * Send the Notice of a Sweep that has ended. A Plugin Server that is stopping
+ * sends none: the Sweep has not ended, and the next start ends it and says so.
+ * A Sweep deleted with its Topic while it ran has no one to tell about.
+ */
+function tell(sweeping: Sweeping, id: number): void {
+  if (sweeping.reading.stopping.aborted) return;
+  const sweep = endedSweep(sweeping.store, id);
+  if (sweep !== null) sweeping.notices.send(noticeFor(sweep));
+}
+
+/** A Sweep that has ended, with its Topic's name, or null when it runs or is gone. */
+function endedSweep(store: Store, id: number): EndedSweep | null {
+  const row = store
+    .prepare(
+      `SELECT ${SWEEP_COLUMNS}, topics.name AS topic_name FROM sweeps ` +
+        'JOIN topics ON topics.id = sweeps.topic_id WHERE sweeps.id = ?',
+    )
+    .get(id) as (SweepRow & { readonly topic_name: string }) | undefined;
+  if (row === undefined || runs(row.state)) return null;
+  return {
+    topicId: row.topic_id,
+    topicName: row.topic_name,
+    state: row.state,
+    reason: row.reason,
+    readCount: row.read_count,
+    sourceCount: row.source_count,
+  };
 }
 
 /** A fault that is research's own ends the Sweep, and is said once on stderr. */
@@ -344,10 +384,11 @@ function end(store: Store, id: number, state: 'done' | 'failed', reason: string 
 /**
  * A Sweep that runs when the Plugin Server starts was left by one that
  * stopped, and nothing will end it now. It becomes `failed`, and so does each
- * of its Extracts that was not read. Hands back how many Sweeps it ended.
+ * of its Extracts that was not read. Each one sends its Notice, which waits
+ * on the queue for the Host's handshake.
  */
-export function failUnfinished(store: Store): number {
-  return within(store, () => {
+export function failUnfinished(store: Store, notices: Notices): void {
+  const ended = within(store, () => {
     const at = now();
     store
       .prepare(
@@ -356,14 +397,17 @@ export function failUnfinished(store: Store): number {
           "(SELECT id FROM sweeps WHERE state IN ('reading', 'digesting'))",
       )
       .run(NOT_READ_STOPPED, at);
-    const ended = store
+    return store
       .prepare(
         "UPDATE sweeps SET state = 'failed', reason = ?, ended_at = ? " +
-          "WHERE state IN ('reading', 'digesting')",
+          "WHERE state IN ('reading', 'digesting') RETURNING id",
       )
-      .run(STOPPED, at);
-    return Number(ended.changes);
+      .all(STOPPED, at) as { id: number }[];
   });
+  for (const { id } of ended) {
+    const sweep = endedSweep(store, id);
+    if (sweep !== null) notices.send(noticeFor(sweep));
+  }
 }
 
 /** The Sweeps of a Topic, new to old, without their Extracts. */

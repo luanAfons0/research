@@ -34,6 +34,7 @@ The Plugin Server reads these from its environment, which is the Host's:
 | `RESEARCH_DIGEST_COMMAND`    | The command that makes the Digest. Optional; see [The Digest](#the-digest). |
 | `RESEARCH_FETCH_TIMEOUT_MS`  | How long one Source may take to answer, body and all. Default `30000`. |
 | `RESEARCH_DIGEST_TIMEOUT_MS` | How long the Digest command may run before it is stopped. Default `900000` (15 minutes). |
+| `RESEARCH_NOTICE_GAP_MS`     | How long research waits after one Notice before it sends the next. Default `5000`, the Host's own gap; tests make it short. |
 
 When the Host runs as a systemd service, give it the settings with a drop-in,
 which `firstmate service on` leaves alone:
@@ -107,6 +108,32 @@ A Sweep is `reading`, then `digesting`, then `done`, or `failed` with a reason:
 A Sweep that fails keeps every Extract it read. Only one Sweep of a Topic runs
 at a time; Sweeps of different Topics run at the same time. A Sweep reads the
 Sources the Topic had when it started, so you can edit the Topic while it runs.
+
+## Notices
+
+When a Sweep ends, research sends one **Notice** through the Host (FirstMate
+ADR-0014), so you know with the Plugin Page closed:
+
+- `research: Digest ready`, with `<Topic> — <read> of <all> Sources read.`;
+- `research: Sweep failed`, with `<Topic> — <reason>.`
+
+A click on the Notice opens that Topic on the Plugin Page, at its latest
+Sweep (`#topic/<id>`). The Host takes a title of 64 characters and a body of
+200 at most, and cuts nothing, so research shortens a long Topic name and a
+long reason, and marks the cut with `…`.
+
+There is no Notice when a Sweep starts, when its reading ends, or when you
+make the Digest again with `make_digest`: you asked for that one on the page,
+and you see it end there. A Sweep the Plugin Server left running when it
+stopped ends `failed` at the next start, and sends its Notice then.
+
+The Host takes one Notice from a Plugin every 5 seconds. research sends one,
+then waits `RESEARCH_NOTICE_GAP_MS` before the next, so two Sweeps that end
+together give two Notices and none is lost. When the Host still says "too
+soon", the Notice goes back to the front of the queue. Any other refusal is
+written once to stderr, and that Notice is dropped. A Host whose handshake
+does not offer Notices (`capabilities.experimental.firstmate.notice`) gets
+none.
 
 ## The Digest
 

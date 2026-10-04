@@ -59,6 +59,8 @@ export type Refusal = { readonly code: number; readonly message: string };
 
 /** One `firstmate/notice` the Plugin Server sent, as the Host received it. */
 export type ReceivedNotice = {
+  /** The id the Plugin Server numbered the request with, on its own side. */
+  readonly id: unknown;
   /** The request's params, whole, as they came. */
   readonly params: Readonly<Record<string, unknown>>;
   /** When the request came, in milliseconds, as `Date.now()` counts them. */
@@ -238,9 +240,9 @@ export async function startPluginServer(
     const given = message['params'];
     const params =
       typeof given === 'object' && given !== null ? (given as Record<string, unknown>) : {};
-    const refused = answerNotice(params, notices.length);
-    notices.push(refused === undefined ? { params, at } : { params, at, refused });
     const id = message['id'];
+    const refused = answerNotice(params, notices.length);
+    notices.push(refused === undefined ? { id, params, at } : { id, params, at, refused });
     if (id !== undefined && id !== null) {
       send(
         refused === undefined
