@@ -55,10 +55,19 @@ one they need through `tests/helpers/plugin.ts`.
 ```
 mcp            the executable the Host runs: find a Node 24, run src/main.ts.
 src/           the Plugin Server. Every file is one job.
-  main.ts      start-up: open research.db, serve the tools, close on stdin's end.
+  main.ts      start-up: read the settings, open research.db, fail the Sweeps
+               left running, serve the tools, send Notices once the handshake
+               offers them, close on stdin's end.
+  settings.ts  what research reads from its environment.
   store.ts     research.db: open it, move it up to the current schema version.
+  topics.ts    make, change, list and delete Topics and their Sources.
+  sweeps.ts    start a Sweep, read its Sources in the background, record each state.
+  reader.ts    one Source in, one Extract out: the fetch rules (ADR-0001).
+  extractor.ts the readable text of an HTML page, with no parser to depend on.
+  digest.ts    the prompt of a Sweep, and the Digest command that reads it (ADR-0002).
+  notices.ts   the Notice a Sweep that ends sends, through a queue that keeps the gap.
   tools.ts     the tools this Plugin ships, for the Page and for other Plugins.
-  mcp.ts       the one connection to the Host: MCP over stdio.
+  mcp.ts       the one connection to the Host: MCP over stdio, both ways.
 web/           the Plugin Page, as the Host serves it.
   index.html   the three panes, drawn by app.js.
   rpc.js       request(), listTools() and call(): the Plugin Server, over POST rpc.
@@ -103,10 +112,23 @@ docs/agents/   how an agent works in this repo. See "Agent skills" below.
   `firstmate/notice` with the time it came, and accepts it or refuses it as
   the test says (`answerNotice`, `tooSoon`).
 - **The outside world comes from fixtures** in `tests/fixtures/`, never from
-  mocks. Add a fixture rather than a mock.
+  mocks. Add a fixture rather than a mock. The pages a Sweep reads are in
+  `tests/fixtures/sources/`, served over real HTTP on 127.0.0.1 by
+  `tests/helpers/sources.ts`, which each test starts on a port of its own.
 - **The Page as bytes**: `tests/page.test.ts` reads `web/` off disk, and runs
   `rpc.js` in a `node:vm` context against the real Plugin Server.
   `tests/markdown.test.ts` runs `web/markdown.js` the same way.
+- **The Page as a person uses it**: `tests/helpers/page.ts` runs the scripts
+  `index.html` loads in one `node:vm` context, against the real Plugin Server,
+  with a small stand-in for the part of a browser the page touches: the
+  elements `index.html` declares, their events, and the address fragment. A
+  test opens an address, presses buttons and types, and reads what a person
+  would see. An element the page needs is declared in `index.html`, never
+  made by the script, so this stand-in and the id check both see it. A list
+  the page draws inside one (the Sweeps, the Extracts) is pressed with
+  `pressIn`, so the page listens on the declared element and finds the item
+  with `closest('[data-…]')`. A wait of a second or more, such as the poll
+  while a Sweep runs, passes only when a test calls `later()`.
 - A test name is a sentence about behaviour:
   `'with no Node 24 anywhere, the wrapper says so in one sentence that names RESEARCH_NODE'`.
 

@@ -1,0 +1,8 @@
+Release notes, as plain text.
+
+The text of a plain text Source is kept as it is: its own lines, and its own
+blank lines between paragraphs. research does not look for HTML in it, so a
+<p> here is four characters of text and nothing else.
+
+This paragraph is here so that the Extract is long enough not to be marked
+as a page with little text, which is what a page that needs JavaScript gives.

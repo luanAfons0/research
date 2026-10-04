@@ -13,14 +13,11 @@
  */
 import { strict as assert } from 'node:assert';
 import { readFile, stat } from 'node:fs/promises';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import { createContext, runInContext } from 'node:vm';
-import { REPOSITORY, startedAndShaken, type Started } from './helpers/plugin.ts';
-
-const WEB = join(REPOSITORY, 'web');
+import { hostFor, WEB } from './helpers/page.ts';
+import { startedAndShaken } from './helpers/plugin.ts';
 
 /** Every page in web/, and the script each one runs. */
 const PAGES = [{ page: 'index.html', script: 'app.js' }];
@@ -108,11 +105,10 @@ for (const { page, script } of PAGES) {
   });
 }
 
-test('app.js asks the Plugin Server for its tools when the page loads', async () => {
+test('app.js starts when it loads', async () => {
   const code = await readFile(join(WEB, 'app.js'), 'utf8');
 
   assert.match(code, /^start\(\);$/m, 'app.js does not start when it loads');
-  assert.match(code, /await listTools\(\)/, 'app.js does not call listTools');
 });
 
 test('rpc.js reaches the tools over the relative rpc address, never an absolute one', async () => {
@@ -121,28 +117,6 @@ test('rpc.js reaches the tools over the relative rpc address, never an absolute 
   assert.match(code, /const RPC = 'rpc';/);
   assert.ok(!code.includes('/p/research'), "rpc.js names the Plugin's address by hand");
 });
-
-/**
- * A stand-in for the Host's `POST /p/research/rpc`: it hands each JSON-RPC body
- * to the real Plugin Server and returns the answer with the caller's own id.
- */
-async function hostFor(t: TestContext, plugin: Started): Promise<string> {
-  const server = createServer(async (request, response) => {
-    if (request.method !== 'POST' || request.url !== '/p/research/rpc') {
-      response.writeHead(404).end();
-      return;
-    }
-    let body = '';
-    for await (const chunk of request) body += String(chunk);
-    const asked = JSON.parse(body) as { id: unknown; method: string; params?: unknown };
-    const answer = await plugin.ask(asked.method, asked.params);
-    response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ jsonrpc: '2.0', id: asked.id, ...answer }));
-  });
-  await new Promise<void>((listening) => server.listen(0, '127.0.0.1', listening));
-  t.after(() => new Promise<void>((closed) => server.close(() => closed())));
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}/p/research/`;
-}
 
 /** rpc.js, run as a browser runs it, on a page served at `page`. */
 async function rpcAt(page: string): Promise<Record<string, unknown>> {
@@ -173,4 +147,18 @@ test("the page's rpc turns a refusal into a sentence", async (t) => {
   const call = rpc['call'] as (name: string) => Promise<unknown>;
 
   await assert.rejects(call('polish_boots'), /polish_boots/);
+});
+
+test("the page's rpc keeps the refusal's data, for the page to point at what to change", async (t) => {
+  const plugin = await startedAndShaken(t);
+  const rpc = await rpcAt(await hostFor(t, plugin));
+  const call = rpc['call'] as (name: string, args: unknown) => Promise<unknown>;
+
+  const refused = await call('create_topic', { name: 'X', sources: ['ftp://a.example/'] }).then(
+    () => assert.fail('a bad address was saved'),
+    (fault: { message: string; data?: unknown }) => fault,
+  );
+
+  assert.match(refused.message, /ftp:\/\/a\.example\//);
+  assert.deepEqual(refused.data, { field: 'sources', index: 0, address: 'ftp://a.example/' });
 });

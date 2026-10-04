@@ -1,7 +1,8 @@
 /* research's own Plugin Server, reached from every page in web/. It defines
    three globals: request(method, params) → the JSON-RPC result,
    listTools() → the tools the Plugin Server ships, and
-   call(name, args) → one tool's structured answer. */
+   call(name, args) → one tool's structured answer. A refusal is an Error
+   with the Plugin Server's sentence, and its data, when there is some. */
 'use strict';
 
 // The one address a page talks to: its own Plugin's tools, relative to the
@@ -45,7 +46,13 @@ async function request(method, params) {
   }
 
   const answered = await response.json();
-  if (answered.error) throw new Error(answered.error.message);
+  if (answered.error) {
+    // The sentence is for a person. The data, when the Plugin Server gives
+    // some, says which part to change, so the page can point at it.
+    const refused = new Error(answered.error.message);
+    if (answered.error.data !== undefined) refused.data = answered.error.data;
+    throw refused;
+  }
   return answered.result;
 }
 

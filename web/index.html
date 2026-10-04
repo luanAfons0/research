@@ -10,17 +10,23 @@
 <body>
 <!-- Three panes: the Topics on the left, the Digest in the centre, the Sweeps
      and Extracts on the right. With the class "index", only the centre shows,
-     and it holds the list of Topics. -->
+     and it holds the list of Topics. The address fragment chooses the view:
+     "#" the list, "#new" a new Topic, "#topic/<id>" one Topic, and
+     "#topic/<id>/edit" its form. An Extract opens in the centre, over the
+     Digest, and Escape closes it. -->
 <div class="app index" id="app">
   <nav class="pane rail" id="rail" aria-label="Topics">
     <a class="brand" href="#"><span class="mark" aria-hidden="true"></span>research</a>
-    <div class="rail-head"><span>Topics</span></div>
+    <div class="rail-head"><span>Topics</span><button type="button" class="btn quiet" id="new-topic-rail" aria-label="New Topic"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button></div>
+    <div class="rail-topics" id="rail-topics"></div>
   </nav>
 
   <main class="pane main" id="main">
+    <!-- The Topic list, at "#". -->
     <div class="index-in" id="index">
       <div class="index-head">
         <a class="brand" href="#"><span class="mark" aria-hidden="true"></span>research</a>
+        <button type="button" class="btn go" id="new-topic" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>New Topic</button>
       </div>
 
       <!-- What is wrong, when the Plugin Server cannot be reached. -->
@@ -30,16 +36,146 @@
         <span class="why" id="trouble-why"></span>
       </div>
 
+      <div id="topic-list" hidden>
+        <h1>Topics</h1>
+        <div class="rows-head"><span>Topic</span><span>Sources</span><span>Last Sweep</span></div>
+        <ul class="rows" id="rows"></ul>
+      </div>
+
       <div class="empty" id="no-topics" hidden>
         <h2>No Topics yet</h2>
         <p>A Topic is one subject you research: a name, an optional question, and the pages to read. research reads each page and makes a Digest of what they say.</p>
+        <button type="button" class="btn go" id="new-topic-empty"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>New Topic</button>
       </div>
+    </div>
+
+    <!-- One Topic, at "#topic/<id>". -->
+    <div class="main-in" id="topic-view" hidden>
+     <div id="topic-main">
+      <header class="topic-head" id="topic-head">
+        <div><h1 id="topic-name"></h1><p class="question" id="topic-question"></p></div>
+        <div class="acts">
+          <button type="button" class="btn go" id="sweep-now"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>Sweep now</button>
+          <button type="button" class="btn" id="edit"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg>Edit</button>
+          <button type="button" class="btn danger" id="delete"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M6 4.5V3h4v1.5M4 4.5l.7 9h6.6l.7-9"/></svg>Delete</button>
+        </div>
+      </header>
+
+      <!-- Deleting a Topic asks here first, in the page, never in a dialog of the browser's. -->
+      <div class="band confirm" id="confirm" role="alert" hidden>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M6 4.5V3h4v1.5M4 4.5l.7 9h6.6l.7-9"/></svg>
+        <span class="what" id="confirm-what"></span>
+        <span class="why" id="confirm-why"></span>
+        <span class="band-acts"><button type="button" class="btn danger solid" id="confirm-delete">Delete Topic</button><button type="button" class="btn" id="confirm-cancel">Cancel</button></span>
+      </div>
+
+      <div class="band fail" id="topic-trouble" role="alert" hidden>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg>
+        <span class="what">research cannot show this Topic</span>
+        <span class="why" id="topic-trouble-why"></span>
+      </div>
+
+      <!-- What a Sweep tool refused, such as a Sweep that did not start. -->
+      <div class="band fail" id="sweep-trouble" role="alert" hidden>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg>
+        <span class="what" id="sweep-trouble-what"></span>
+        <span class="why" id="sweep-trouble-why"></span>
+      </div>
+
+      <!-- The Sweep on the screen while it runs, then why it failed. -->
+      <div class="band run" id="running" role="status" hidden>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>
+        <span class="what" id="running-what"></span>
+        <span class="why" id="running-why"></span>
+        <span class="meter" id="meter"><i></i></span>
+      </div>
+      <div class="band fail" id="failed" role="alert" hidden>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg>
+        <span class="what" id="failed-what"></span>
+        <span class="why" id="failed-why"></span>
+        <span class="band-acts" id="failed-acts" hidden><button type="button" class="btn" id="digest-again">Make the Digest again</button></span>
+      </div>
+
+      <!-- The Digest as Markdown. Each [n] in it is a button: a press lights
+           Extract n on the right, and a second press puts the light out. -->
+      <section class="digest" id="digest" aria-label="Digest" hidden>
+        <div class="digest-head"><h2>Digest</h2><span class="made"><span id="digest-made"></span><button type="button" class="btn quiet again" id="digest-again-head" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>Make the Digest again</button></span></div>
+        <div class="prose" id="digest-text" hidden></div>
+        <div class="no-digest" id="no-digest"><p id="digest-words"></p></div>
+        <div class="skeleton" id="digest-skeleton" aria-hidden="true" hidden><i></i><i></i><i></i><i></i><i></i></div>
+      </section>
+     </div>
+
+      <!-- One Extract, whole, opened from the right pane. -->
+      <div id="extract-view" hidden>
+        <a href="#" class="back" id="extract-back"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg>Digest</a>
+        <header class="extract-head">
+          <h1><span class="n-big" id="extract-n"></span><span id="extract-host"></span></h1>
+          <p class="addr-full" id="extract-address"></p>
+          <p><span id="extract-when"></span> <a id="extract-source" href="#" target="_blank" rel="noopener">Open the Source <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M9 2.5h4.5V7M13.5 2.5L7 9M11.5 9.5v4h-9v-9h4"/></svg></a></p>
+        </header>
+        <p class="note warn" id="extract-cut" hidden><strong>Cut for the model.</strong> <span id="extract-cut-why"></span></p>
+        <p class="note warn" id="extract-thin" hidden><strong>Little text.</strong> <span id="extract-thin-why"></span></p>
+        <p class="note fail" id="extract-failed" hidden><strong id="extract-failed-what"></strong> research could not read this Source, so it has no text. Check the address, or remove it from the Topic.</p>
+        <div class="prose" id="extract-text"></div>
+      </div>
+    </div>
+
+    <!-- A new Topic at "#new", or one Topic's form at "#topic/<id>/edit". -->
+    <div class="main-in" id="form-view" hidden>
+      <header class="topic-head"><div><h1 id="form-title"></h1></div></header>
+      <div class="band run" id="form-running" role="status" hidden>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.2v4M8 4.9v.1"/></svg>
+        <span class="what">A Sweep of this Topic is running</span>
+        <span class="why">You can save now. The running Sweep keeps the Sources it started with.</span>
+      </div>
+      <form class="form" id="form">
+        <div class="field">
+          <label for="f-name">Name</label>
+          <input class="input" id="f-name" placeholder="For example: Node 24 release" required>
+        </div>
+        <div class="field">
+          <label for="f-q">Question <span class="optional">(optional)</span></label>
+          <input class="input" id="f-q" placeholder="What do you want the Digest to answer?">
+          <span class="help">The Digest is written in the language of the question. With no question, it is written in Brazilian Portuguese.</span>
+        </div>
+        <!-- The Sources, in order: the order gives each one the [n] of the
+             next Sweep. app.js draws the rows into f-src-list; each row
+             moves up or down, by its buttons or Alt+ArrowUp and
+             Alt+ArrowDown, and its trash button removes it. -->
+        <div class="field" role="group" aria-labelledby="f-src-label">
+          <span class="label" id="f-src-label">Sources <span class="optional" id="f-src-count"></span></span>
+          <ol class="srcs" id="f-src-list" aria-labelledby="f-src-label" hidden></ol>
+          <p class="src-none" id="f-src-none">No Sources yet. Add the pages to read, one at a time or many at once.</p>
+          <div class="src-add">
+            <input class="input addr" id="f-src-add" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…" aria-label="Add a Source" aria-describedby="f-src-help">
+            <button type="button" class="btn" id="f-src-add-button"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Add</button>
+          </div>
+          <span class="field-error" id="f-src-add-err" role="alert" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg><span id="f-src-add-err-text"></span></span>
+          <span class="help" id="f-src-help">research reads each page once, and no page it links to.</span>
+        </div>
+        <span class="field-error" id="form-error" role="alert" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg><span id="form-error-text"></span></span>
+        <div class="acts"><button type="submit" class="btn go" id="form-submit"></button><button type="button" class="btn" id="form-cancel">Cancel</button></div>
+      </form>
     </div>
   </main>
 
-  <aside class="pane side" id="side" aria-label="Sweeps and Extracts"></aside>
+  <!-- The Sweeps of the Topic, new to old, and the Extracts of the one on the screen. -->
+  <aside class="pane side" id="side" aria-label="Sweeps and Extracts">
+    <div id="side-topic" hidden>
+      <h2>Sweeps <small>new to old</small></h2>
+      <ul class="sweeps" id="sweeps"></ul>
+      <p class="side-none" id="no-sweeps" hidden>No Sweep yet. Sweep now reads each Source once.</p>
+      <div id="extracts-part" hidden>
+        <h2>Extracts <small id="extracts-count"></small></h2>
+        <ol class="extracts" id="extracts"></ol>
+      </div>
+      <p class="side-foot">A Sweep reads each Source once, and no page it links to.</p>
+    </div>
+  </aside>
 </div>
 <script src="rpc.js"></script>
+<script src="markdown.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
