@@ -1,0 +1,566 @@
+<title>research Plugin Page</title>
+<style>
+/* Layout: a three-pane reader. Topics on the left, the Digest owns the
+   centre at a reading measure, the Sweep and its Extracts on the right.
+   The Topic list is its own wide view at "#". System faces only, because the
+   real page loads no web font (FirstMate ADR-0008). */
+:root {
+  --canvas: #f3f5f6;
+  --pane: #ffffff;
+  --sunken: #eef1f2;
+  --ink: #1b2024;
+  --muted: #5b666e;
+  --faint: #7f8a92;
+  --line: #e1e5e8;
+  --accent: #0e6b66;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2f2f0;
+  --fail: #c0291b;
+  --fail-soft: #fdecea;
+  --fail-ink: #7a170e;
+  --warn: #8a5300;
+  --warn-soft: #fbf1df;
+  --sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+  --display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+  --mono: 'Cascadia Mono', Consolas, ui-monospace, Menlo, monospace;
+  --radius: 8px;
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #0e1113; --pane: #15191c; --sunken: #1b2024; --ink: #e4e9ec; --muted: #9aa5ad; --faint: #737e86;
+    --line: #262c31; --accent: #5cc6bd; --accent-ink: #062321; --accent-soft: #15302e;
+    --fail: #ff7d70; --fail-soft: #361714; --fail-ink: #ffd6d1; --warn: #e3ab4e; --warn-soft: #2f2412;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --canvas: #0e1113; --pane: #15191c; --sunken: #1b2024; --ink: #e4e9ec; --muted: #9aa5ad; --faint: #737e86;
+  --line: #262c31; --accent: #5cc6bd; --accent-ink: #062321; --accent-soft: #15302e;
+  --fail: #ff7d70; --fail-soft: #361714; --fail-ink: #ffd6d1; --warn: #e3ab4e; --warn-soft: #2f2412;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; }
+body {
+  margin: 0; background: var(--canvas); color: var(--ink);
+  font: 15px/1.5 var(--sans); font-variant-numeric: tabular-nums;
+  caret-color: var(--accent); scrollbar-color: var(--line) transparent;
+}
+::selection { background: var(--accent-soft); color: var(--ink); }
+a { color: var(--accent); text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--pane); color: var(--ink);
+  font: 600 13px/1 var(--sans); cursor: pointer; white-space: nowrap;
+  transition: background-color 160ms var(--ease), border-color 160ms var(--ease), transform 120ms var(--ease);
+}
+@media (hover: hover) and (pointer: fine) { .btn:hover:not(:disabled) { border-color: var(--faint); } }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.go { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+@media (hover: hover) and (pointer: fine) { .btn.go:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--ink)); border-color: transparent; } }
+.btn.danger { color: var(--fail); }
+.btn.danger.solid { background: var(--fail); border-color: var(--fail); color: #fff; }
+.btn.quiet { border-color: transparent; background: transparent; color: var(--muted); }
+@media (hover: hover) and (pointer: fine) { .btn.quiet:hover:not(:disabled) { color: var(--ink); background: var(--sunken); border-color: transparent; } }
+
+/* App frame */
+.app { display: grid; grid-template-columns: 248px minmax(0, 1fr) 328px; height: 100%; }
+.app.index { grid-template-columns: minmax(0, 1fr); }
+.pane { min-width: 0; overflow-y: auto; }
+.rail { background: var(--canvas); border-right: 1px solid var(--line); padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; }
+.app.index .rail, .app.index .side { display: none; }
+.brand { display: flex; align-items: center; gap: 8px; padding: 4px 8px 12px; font: 600 15px/1 var(--display); color: var(--ink); text-decoration: none; }
+.brand .mark { width: 14px; height: 14px; border-radius: 4px; border: 2px solid var(--accent); }
+.rail-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.topic-link {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 8px; padding: 8px 10px; border-radius: var(--radius);
+  color: var(--ink); text-decoration: none; transition: background-color 160ms var(--ease);
+}
+@media (hover: hover) and (pointer: fine) { .topic-link:hover { background: var(--sunken); } }
+.topic-link[aria-current="page"] { background: var(--accent-soft); }
+.topic-link .name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topic-link .count { font-size: 12px; color: var(--faint); }
+.topic-link .last { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+
+/* State words: always words, colour only adds to them */
+.state { font-weight: 600; }
+.state.failed { color: var(--fail); }
+.state.running { color: var(--accent); }
+.state.never { color: var(--faint); font-weight: 400; }
+
+/* Centre */
+.main { background: var(--pane); }
+.main-in { max-width: 760px; margin: 0 auto; padding: 28px 40px 64px; }
+.topic-head { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: flex-start; justify-content: space-between; }
+.topic-head h1 { font: 600 26px/1.2 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+.question { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+.question.none { color: var(--faint); font-style: italic; }
+.acts { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Bands: running, failed, confirm */
+.band {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: start;
+  margin: 20px 0 0; padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--sunken);
+}
+.band svg.i { margin-top: 2px; }
+.band .what { font-weight: 600; }
+.band .why { grid-column: 2; color: var(--muted); font-size: 14px; }
+.band .why code, .why code, .field-error code { font: 13px var(--mono); }
+.band .band-acts { grid-row: 1 / span 2; grid-column: 3; display: flex; gap: 8px; align-self: center; }
+.band.run { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--accent-soft); }
+.band.run svg.i { color: var(--accent); }
+.band.fail { border-color: color-mix(in srgb, var(--fail) 45%, var(--line)); background: var(--fail-soft); }
+.band.fail svg.i, .band.fail .what { color: var(--fail); }
+.band.fail .why { color: var(--ink); }
+.band.confirm { border-color: color-mix(in srgb, var(--fail) 45%, var(--line)); background: var(--pane); }
+.meter { grid-column: 2 / -1; height: 3px; border-radius: 3px; background: color-mix(in srgb, var(--accent) 18%, transparent); overflow: hidden; margin-top: 6px; }
+.meter i { display: block; height: 100%; width: 100%; background: var(--accent); border-radius: 3px; transform: scaleX(var(--done, 0.5)); transform-origin: left; transition: transform 300ms var(--ease); }
+.meter.indeterminate i { width: 30%; transform: none; animation: slide 1.4s cubic-bezier(0.77, 0, 0.175, 1) infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+
+/* Digest */
+.digest { margin-top: 28px; }
+.digest-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.digest-head h2 { font: 600 13px/1.2 var(--sans); color: var(--muted); margin: 0; letter-spacing: .02em; }
+.digest-head .made { font-size: 13px; color: var(--faint); }
+.prose { max-width: 66ch; font-size: 17px; line-height: 1.65; padding-top: 6px; }
+.prose h3 { font: 600 19px/1.3 var(--display); margin: 26px 0 8px; text-wrap: balance; }
+.prose p, .prose li { margin: 0 0 12px; }
+.prose ul { padding-left: 1.2em; margin: 0 0 12px; }
+.prose code { white-space: nowrap; font: 0.86em var(--mono); background: var(--sunken); padding: 1px 5px; border-radius: 4px; }
+.cite {
+  display: inline-block; min-width: 1.6em; padding: 0 4px; margin: 0 1px; border-radius: 5px;
+  font: 600 12px/1.6 var(--sans); text-align: center; vertical-align: 2px; text-decoration: none;
+  color: var(--accent); background: var(--accent-soft); cursor: pointer; border: 0;
+  transition: background-color 160ms var(--ease), color 160ms var(--ease), transform 120ms var(--ease);
+}
+.cite:active { transform: scale(0.95); }
+.x:active { transform: scale(0.99); }
+.cite[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.cite.bad { color: var(--fail); background: var(--fail-soft); }
+.no-digest { max-width: 56ch; color: var(--muted); padding: 18px 0; }
+.no-digest p { margin: 0 0 10px; }
+.skeleton { display: grid; gap: 12px; max-width: 62ch; padding-top: 16px; }
+.skeleton i { display: block; height: 11px; border-radius: 6px; background: var(--sunken); }
+.skeleton i:nth-child(2) { width: 92%; } .skeleton i:nth-child(3) { width: 97%; } .skeleton i:nth-child(4) { width: 70%; } .skeleton i:nth-child(5) { width: 84%; }
+
+/* Extract reader (centre) */
+.back { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; text-decoration: none; margin-bottom: 14px; }
+.extract-head h1 { font: 600 22px/1.3 var(--display); margin: 0; }
+.extract-head .addr-full { font: 13px/1.4 var(--mono); color: var(--faint); overflow-wrap: anywhere; margin-top: 4px; }
+.extract-head .n-big { color: var(--accent); margin-right: 6px; }
+.extract-head p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+.note { margin: 16px 0 0; padding: 10px 12px; border-radius: var(--radius); font-size: 14px; }
+.note.warn { background: var(--warn-soft); color: var(--ink); }
+.note.warn strong { color: var(--warn); }
+
+/* Side: Sweeps and Extracts */
+.side { background: var(--canvas); border-left: 1px solid var(--line); padding: 20px 16px 40px; }
+.side h2 { display: flex; align-items: baseline; justify-content: space-between; font: 600 13px/1.2 var(--sans); color: var(--muted); margin: 0 0 8px; letter-spacing: .02em; }
+.side h2 small { font-weight: 400; color: var(--faint); }
+.sweeps { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 2px; }
+.sweep { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-radius: var(--radius); }
+.sweep button.pick {
+  all: unset; box-sizing: border-box; width: 100%; display: flex; justify-content: space-between; gap: 8px; padding: 7px 10px; font-size: 13px; cursor: pointer; border-radius: var(--radius);
+}
+.sweep button.pick:focus-visible { outline: 2px solid var(--accent); }
+@media (hover: hover) and (pointer: fine) { .sweep:hover { background: var(--sunken); } }
+.sweep.on { background: var(--pane); box-shadow: inset 0 0 0 1px var(--line); }
+.sweep .del { opacity: 0; transition: opacity 120ms var(--ease); }
+.sweep .del:focus-visible { opacity: 1; }
+.cite:hover { background: var(--accent); color: var(--accent-ink); }
+@media (hover: none) { .sweep .del { opacity: 1; } }
+@media (hover: hover) and (pointer: fine) { .sweep:hover .del, .sweep .del:focus-visible { opacity: 1; } }
+.extracts { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.x {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 2px 8px; padding: 9px 10px; border-radius: var(--radius);
+  background: var(--pane); border: 1px solid var(--line); cursor: pointer;
+  transition: border-color 200ms var(--ease), background-color 200ms var(--ease), box-shadow 200ms var(--ease), transform 120ms var(--ease);
+}
+@media (hover: hover) and (pointer: fine) { .x:hover { border-color: var(--faint); } }
+.x .n { font: 600 12px/20px var(--sans); color: var(--accent); background: var(--accent-soft); border-radius: 5px; text-align: center; height: 20px; }
+.x .host { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.x .path { grid-column: 2; font: 12px/1.35 var(--mono); color: var(--faint); overflow-wrap: anywhere; }
+.x .mark { grid-column: 2; display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.x .mark svg.i { width: 13px; height: 13px; }
+.x[data-m="cut"] .mark, .x[data-m="thin"] .mark { color: var(--warn); }
+.x[data-m="fail"] { border-color: color-mix(in srgb, var(--fail) 40%, var(--line)); background: var(--fail-soft); }
+.x[data-m="fail"] .n { background: var(--fail); color: #fff; }
+.x[data-m="fail"] .mark { color: var(--fail); font-weight: 600; }
+.x[data-m="fail"] .host { color: var(--fail-ink); }
+.x[data-m="wait"] { opacity: .55; cursor: default; }
+.x[data-m="reading"] .mark { color: var(--accent); font-weight: 600; }
+.x.hit { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.x.open { border-color: var(--accent); }
+.side-foot { margin-top: 20px; font-size: 12px; color: var(--faint); }
+
+/* Index view */
+.index-in { max-width: 920px; margin: 0 auto; padding: 32px 32px 64px; }
+.index-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.index-head h1 { font: 600 24px/1.2 var(--display); margin: 0; }
+.rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.row a {
+  display: grid; grid-template-columns: minmax(0, 1fr) 90px 190px; gap: 4px 20px; align-items: baseline; padding: 14px 8px;
+  border-bottom: 1px solid var(--line); color: var(--ink); text-decoration: none; transition: background-color 160ms var(--ease);
+}
+@media (hover: hover) and (pointer: fine) { .row a:hover { background: var(--pane); } }
+.row .t { font-weight: 600; }
+.row .q { grid-column: 1; grid-row: 2; color: var(--muted); font-size: 14px; }
+.row .q.none { color: var(--faint); font-style: italic; }
+.row .c { color: var(--muted); font-size: 14px; grid-row: 1 / span 2; }
+.row .s { font-size: 14px; grid-row: 1 / span 2; }
+.rows-head { display: grid; grid-template-columns: minmax(0, 1fr) 90px 190px; gap: 20px; padding: 0 8px 6px; font-size: 12px; color: var(--faint); }
+.empty { max-width: 46ch; padding: 48px 0; }
+.empty h2 { font: 600 20px/1.3 var(--display); margin: 0 0 8px; }
+.empty p { color: var(--muted); margin: 0 0 18px; }
+
+/* Topic form */
+.form { display: grid; gap: 20px; max-width: 62ch; margin-top: 22px; }
+.field { display: grid; gap: 6px; }
+.field label { font-weight: 600; font-size: 14px; }
+.field .help { font-size: 13px; color: var(--muted); }
+.input, .area {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--pane); color: var(--ink);
+  font: 15px/1.45 var(--sans); transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+.area { min-height: 11em; font: 14px/1.6 var(--mono); resize: vertical; }
+.input:focus, .area:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.area[aria-invalid="true"] { border-color: var(--fail); }
+.field-error { display: flex; gap: 6px; align-items: flex-start; color: var(--fail); font-size: 14px; }
+.field-error svg.i { margin-top: 2px; }
+.form .acts { padding-top: 4px; }
+
+/* Mock-only toolbar: outside the design */
+.mock {
+  position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 10;
+  font: 12px/1.4 var(--sans); background: var(--ink); color: var(--pane); border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.28); max-width: calc(100vw - 32px);
+}
+.mock summary { cursor: pointer; padding: 8px 12px; font-weight: 600; list-style: none; }
+.mock summary::-webkit-details-marker { display: none; }
+.mock .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 0 10px 10px; width: 300px; max-width: 100%; }
+.mock button { all: unset; cursor: pointer; padding: 5px 8px; border-radius: 6px; background: rgba(127,127,127,.18); text-align: center; }
+.mock button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.mock button:focus-visible { outline: 2px solid var(--accent); }
+.mock .lab { grid-column: 1 / -1; opacity: .7; margin-top: 4px; }
+
+/* Narrow: one column, the rail becomes a top bar, the side pane follows the Digest */
+@media (max-width: 1080px) { .app { grid-template-columns: 220px minmax(0, 1fr) 290px; } .main-in { padding-inline: 28px; } }
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  .app, .app.index { display: block; height: auto; }
+  .pane { overflow: visible; }
+  .rail { flex-direction: row; flex-wrap: nowrap; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px 12px; gap: 4px; }
+  .rail .brand { padding: 4px 8px 4px 0; }
+  .rail-head { display: none; }
+  .topic-link { flex: none; max-width: 220px; }
+  .main-in, .index-in { padding: 20px 16px 40px; }
+  .side { border-left: 0; border-top: 1px solid var(--line); padding: 20px 16px 96px; }
+  .row a, .rows-head { grid-template-columns: minmax(0, 1fr) auto; }
+  .row .c { display: none; } .rows-head span:nth-child(2) { display: none; }
+  .band { grid-template-columns: auto minmax(0, 1fr); }
+  .band .band-acts { grid-row: auto; grid-column: 2; align-self: start; margin-top: 6px; }
+  .prose { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn:active, .cite:active, .x:active { transform: none; }
+  .meter i { transition: none; }
+  .meter.indeterminate i { width: 100%; opacity: .5; animation: none; }
+}
+</style>
+
+<div id="app"></div>
+
+<details class="mock" open>
+  <summary>Mock states</summary>
+  <div class="grid" id="mock"></div>
+</details>
+
+<script>
+const ICON = {
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  sweep: '<path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/>',
+  edit: '<path d="M10.5 2.5l3 3L6 13H3v-3z"/>',
+  trash: '<path d="M2.5 4.5h11M6 4.5V3h4v1.5M4 4.5l.7 9h6.6l.7-9"/>',
+  alert: '<path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/>',
+  info: '<circle cx="8" cy="8" r="6.2"/><path d="M8 7.2v4M8 4.9v.1"/>',
+  back: '<path d="M10 3L5 8l5 5"/>',
+  out: '<path d="M9 2.5h4.5V7M13.5 2.5L7 9M11.5 9.5v4h-9v-9h4"/>',
+  check: '<path d="M3 8.5l3.2 3L13 4.5"/>',
+  cut: '<circle cx="4.5" cy="11.5" r="2"/><circle cx="11.5" cy="11.5" r="2"/><path d="M5.8 10L12 2.5M10.2 10L4 2.5"/>',
+  dot: '<circle cx="8" cy="8" r="2.4"/>',
+};
+const icon = (name) => `<svg class="i" viewBox="0 0 16 16" aria-hidden="true">${ICON[name]}</svg>`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* Example data: every name, address and text below is a sample. */
+const TOPICS = [
+  { id: 1, name: 'Node 24 release', q: 'What changed in the Node 24 release?', sources: 6, last: '3 Oct, 14:02', st: 'done', stText: 'Digest ready' },
+  { id: 2, name: 'Rust 2027 edition', q: 'Which changes in the 2027 edition break existing code?', sources: 4, last: 'today, 15:40', st: 'running', stText: 'Reading' },
+  { id: 3, name: 'WASI preview 3', q: '', sources: 3, last: '2 Oct, 09:00', st: 'failed', stText: 'Sweep failed' },
+  { id: 4, name: 'SQLite in Node', q: 'Is node:sqlite ready for production use?', sources: 5, last: '', st: 'never', stText: 'Not swept yet' },
+];
+
+const EXTRACTS = [
+  { n: 1, host: 'nodejs.org', path: '/en/blog/release/v24.0.0', m: 'read', mark: '6,812 characters' },
+  { n: 2, host: 'github.com', path: '/nodejs/node/blob/main/doc/changelogs/CHANGELOG_V24.md', m: 'cut', mark: 'Cut: the model read 20,000 of 48,201 characters' },
+  { n: 3, host: 'developer.mozilla.org', path: '/en-US/docs/Web/API/URLPattern', m: 'read', mark: '3,950 characters' },
+  { n: 4, host: 'nodeweekly.com', path: '/issues/580', m: 'thin', mark: 'Little text (212 characters). The page may need JavaScript.' },
+  { n: 5, host: 'openjsf.org', path: '/slides/node-24.pdf', m: 'fail', mark: 'Not read: application/pdf' },
+  { n: 6, host: 'blog.example.dev', path: '/node-24-first-look', m: 'fail', mark: 'HTTP 404' },
+];
+
+const MARK_ICON = { read: 'check', cut: 'cut', thin: 'info', fail: 'alert', wait: 'dot', reading: 'sweep' };
+
+const cite = (n) => `<button type="button" class="cite${EXTRACTS[n - 1].m === 'fail' ? ' bad' : ''}" data-n="${n}" aria-label="Extract ${n}" aria-pressed="false">${n}</button>`;
+
+const DIGEST = `
+<h3>What changed</h3>
+<ul>
+<li>Node 24 ships V8 13.6, which adds <code>Float16Array</code> and explicit resource management with <code>using</code>.${cite(1)}${cite(2)}</li>
+<li><code>URLPattern</code> is now a global, so you no longer import it.${cite(1)}${cite(3)}</li>
+<li>npm 11 comes with Node 24.${cite(1)}</li>
+<li>The permission model is no longer experimental. Turn it on with <code>--permission</code>.${cite(2)}</li>
+<li><code>AsyncLocalStorage</code> now uses <code>AsyncContextFrame</code> by default.${cite(2)}</li>
+</ul>
+<h3>What to check before you upgrade</h3>
+<p><code>url.parse()</code> now prints a deprecation warning at run time.${cite(2)} On Windows, building Node from source needs ClangCL instead of MSVC.${cite(2)}</p>
+<p>The changelog was longer than the model could read, so later entries may be missing.${cite(2)}</p>`;
+
+const EXTRACT_TEXT = `
+<h3>Node.js 24.0.0 (Current)</h3>
+<p>This release updates the V8 JavaScript engine to 13.6, upgrades npm to version 11, and promotes several features to stable.</p>
+<h3>Notable changes</h3>
+<p>V8 13.6 brings <code>Float16Array</code>, explicit resource management, <code>RegExp.escape</code>, <code>WebAssembly Memory64</code> and <code>Error.isError</code>.</p>
+<p>The <code>URLPattern</code> API is now exposed on the global object, so it can be used without an import.</p>
+<p>The permission model flag changes from <code>--experimental-permission</code> to <code>--permission</code>.</p>
+<p>(The Extract goes on: research keeps the whole text it read.)</p>`;
+
+const SWEEPS = [
+  { at: '3 Oct, 14:02', st: 'done', text: '4 of 6 read' },
+  { at: '26 Sep, 09:00', st: 'done', text: '5 of 5 read' },
+  { at: '19 Sep, 09:00', st: 'failed', text: 'Failed' },
+];
+
+const ui = { view: 'topic', sweep: 'done', open: null, confirm: false, empty: false, refuse: false, hit: null };
+
+function rail(current) {
+  const live = { reading: ['running', 'Reading'], digesting: ['running', 'Making the Digest'], failed: ['failed', 'Sweep failed'], 'failed-cmd': ['failed', 'Sweep failed'] }[ui.sweep];
+  const topics = TOPICS.map((t) => (t.id === 1 && live ? { ...t, st: live[0], stText: live[1] } : t));
+  return `<nav class="pane rail" aria-label="Topics">
+    <a class="brand" href="#" data-go="index"><span class="mark" aria-hidden="true"></span>research</a>
+    <div class="rail-head"><span>Topics</span><button type="button" class="btn quiet" data-go="new" aria-label="New Topic">${icon('plus')}</button></div>
+    ${topics.map((t) => `<a class="topic-link" href="#topic/${t.id}" ${t.id === current ? 'aria-current="page"' : ''} data-go="topic">
+      <span class="name">${esc(t.name)}</span><span class="count">${t.sources}</span>
+      <span class="last"><span class="state ${t.st}">${t.stText}</span>${t.last ? ` · ${t.last}` : ''}</span></a>`).join('')}
+  </nav>`;
+}
+
+function topicHead(t, running) {
+  return `<header class="topic-head">
+    <div><h1>${esc(t.name)}</h1>${t.q ? `<p class="question">${esc(t.q)}</p>` : `<p class="question none">No question. The Digest is written in Brazilian Portuguese.</p>`}</div>
+    <div class="acts">
+      <button type="button" class="btn go" ${running ? 'disabled title="A Sweep of this Topic is running. Wait for it to end."' : ''}>${icon('sweep')}Sweep now</button>
+      <button type="button" class="btn" data-go="edit">${icon('edit')}Edit</button>
+      <button type="button" class="btn danger" data-act="confirm">${icon('trash')}Delete</button>
+    </div>
+  </header>`;
+}
+
+function bands() {
+  let out = '';
+  if (ui.confirm) {
+    out += `<div class="band confirm" role="alert">${icon('trash')}<span class="what">Delete “Node 24 release”?</span>
+      <span class="why">Its 6 Sources and 3 Sweeps go with it. This cannot be undone.</span>
+      <span class="band-acts"><button type="button" class="btn danger solid">Delete Topic</button><button type="button" class="btn" data-act="cancel">Cancel</button></span></div>`;
+  }
+  if (ui.sweep === 'reading') {
+    out += `<div class="band run" role="status">${icon('sweep')}<span class="what">Reading 3 of 6 Sources</span>
+      <span class="why">Started at 14:02. The Digest is made when every Source is read.</span><span class="meter" style="--done:0.5"><i></i></span></div>`;
+  } else if (ui.sweep === 'digesting') {
+    out += `<div class="band run" role="status">${icon('sweep')}<span class="what">Making the Digest</span>
+      <span class="why">4 of 6 Sources were read. A model on a CPU can take a few minutes.</span><span class="meter indeterminate"><i></i></span></div>`;
+  } else if (ui.sweep === 'failed') {
+    out += `<div class="band fail" role="alert">${icon('alert')}<span class="what">Sweep failed: no Digest command is set</span>
+      <span class="why">Set <code>RESEARCH_DIGEST_COMMAND</code> where the Host starts, then make the Digest again. The 4 Extracts this Sweep read are kept.</span>
+      <span class="band-acts"><button type="button" class="btn">Make the Digest again</button></span></div>`;
+  } else if (ui.sweep === 'failed-cmd') {
+    out += `<div class="band fail" role="alert">${icon('alert')}<span class="what">Sweep failed: the Digest command failed</span>
+      <span class="why">It said: <code>Error: model "qwen3:8b" not found, try pulling it first</code></span>
+      <span class="band-acts"><button type="button" class="btn">Make the Digest again</button></span></div>`;
+  }
+  return out;
+}
+
+function digestBlock() {
+  if (ui.sweep === 'reading' || ui.sweep === 'digesting') {
+    return `<section class="digest" aria-busy="true"><div class="digest-head"><h2>Digest</h2><span class="made">Sweep of 3 Oct, 14:02</span></div>
+      <div class="no-digest"><p>${ui.sweep === 'reading' ? 'No Digest yet.' : 'The model is writing the Digest now.'}</p></div>
+      <div class="skeleton" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div></section>`;
+  }
+  if (ui.sweep === 'failed' || ui.sweep === 'failed-cmd') {
+    return `<section class="digest"><div class="digest-head"><h2>Digest</h2><span class="made">Sweep of 3 Oct, 14:02</span></div>
+      <div class="no-digest"><p>This Sweep has no Digest. Open an Extract on the right to read what research kept.</p></div></section>`;
+  }
+  return `<section class="digest"><div class="digest-head"><h2>Digest</h2><span class="made">Made at 14:05 from 4 of 6 Sources</span></div>
+    <div class="prose">${DIGEST}</div></section>`;
+}
+
+function extractReader() {
+  const x = EXTRACTS[ui.open - 1];
+  let body;
+  if (x.m === 'fail') body = `<div class="note" style="background:var(--fail-soft)"><strong style="color:var(--fail)">${esc(x.mark)}.</strong> research could not read this Source, so it has no text. Check the address, or remove it from the Topic.</div>`;
+  else body = `${x.m === 'cut' ? `<p class="note warn"><strong>Cut for the model.</strong> The Digest was made from the first 20,000 of 48,201 characters. The whole text is kept below.</p>` : ''}
+    ${x.m === 'thin' ? `<p class="note warn"><strong>Little text.</strong> The page gave only 212 characters. It may make its text with JavaScript, which research does not run.</p>` : ''}
+    <div class="prose">${EXTRACT_TEXT}</div>`;
+  return `<a href="#topic/1" class="back" data-act="close">${icon('back')}Digest</a>
+    <header class="extract-head"><h1><span class="n-big">${x.n}</span>${esc(x.host)}</h1><p class="addr-full">${esc(x.host + x.path)}</p>
+    <p>Read at 14:02 in the Sweep of 3 Oct. <a href="https://${esc(x.host + x.path)}" target="_blank" rel="noopener">Open the Source ${icon('out')}</a></p></header>${body}`;
+}
+
+function side() {
+  const xs = EXTRACTS.map((x) => {
+    let m = x.m;
+    let mark = x.mark;
+    if (ui.sweep === 'reading') {
+      if (x.n === 4) { m = 'reading'; mark = 'Reading now'; } else if (x.n > 4) { m = 'wait'; mark = 'Waiting'; }
+    }
+    return `<li class="x${ui.hit === x.n ? ' hit' : ''}${ui.open === x.n ? ' open' : ''}" data-m="${m}" data-x="${x.n}" tabindex="${m === 'wait' ? -1 : 0}" role="button" aria-label="Extract ${x.n}, ${esc(x.host)}, ${esc(mark)}">
+      <span class="n">${x.n}</span><span class="host">${esc(x.host)}</span><span class="path">${esc(x.path)}</span>
+      <span class="mark">${icon(MARK_ICON[m])}${esc(mark)}</span></li>`;
+  }).join('');
+  const sw = SWEEPS.map((s, i) => {
+    const st = i === 0 && ui.sweep !== 'done' ? (ui.sweep.startsWith('failed') ? 'failed' : 'running') : s.st;
+    const text = i === 0 && ui.sweep !== 'done' ? ({ reading: 'Reading', digesting: 'Making the Digest', failed: 'Failed', 'failed-cmd': 'Failed' }[ui.sweep]) : s.text;
+    return `<li class="sweep${i === 0 ? ' on' : ''}"><button type="button" class="pick"><span>${s.at}</span><span class="state ${st === 'done' ? '' : st}">${text}</span></button>
+      <button type="button" class="btn quiet del" aria-label="Delete the Sweep of ${s.at}" ${st === 'running' ? 'disabled title="A running Sweep cannot be deleted."' : ''}>${icon('trash')}</button></li>`;
+  }).join('');
+  const read = ui.sweep === 'reading' ? '3 of 6 read' : '4 of 6 read';
+  return `<aside class="pane side" aria-label="Sweeps and Extracts">
+    <h2>Sweeps <small>new to old</small></h2><ul class="sweeps">${sw}</ul>
+    <h2>Extracts <small>${read}</small></h2><ol class="extracts">${xs}</ol>
+    <p class="side-foot">A Sweep reads each Source once, and no page it links to.</p></aside>`;
+}
+
+function topicView() {
+  const t = TOPICS[0];
+  const running = ui.sweep === 'reading' || ui.sweep === 'digesting';
+  const centre = ui.open ? extractReader() : `${topicHead(t, running)}${bands()}${digestBlock()}`;
+  return `<div class="app">${rail(1)}<main class="pane main"><div class="main-in">${centre}</div></main>${side()}</div>`;
+}
+
+function indexView() {
+  let body;
+  if (ui.empty) {
+    body = `<div class="empty"><h2>No Topics yet</h2>
+      <p>A Topic is one subject you research: a name, an optional question, and the pages to read. research reads each page and makes a Digest of what they say.</p>
+      <button type="button" class="btn go" data-go="new">${icon('plus')}New Topic</button></div>`;
+  } else {
+    body = `<div class="rows-head"><span>Topic</span><span>Sources</span><span>Last Sweep</span></div><ul class="rows">
+      ${TOPICS.map((t) => `<li class="row"><a href="#topic/${t.id}" data-go="topic"><span class="t">${esc(t.name)}</span>
+        <span class="c">${t.sources}</span><span class="s"><span class="state ${t.st}">${t.stText}</span>${t.last ? `<br><span style="color:var(--faint)">${t.last}</span>` : ''}</span>
+        <span class="q${t.q ? '' : ' none'}">${t.q ? esc(t.q) : 'No question'}</span></a></li>`).join('')}</ul>`;
+  }
+  return `<div class="app index"><main class="pane main" style="background:var(--canvas)"><div class="index-in">
+    <div class="index-head"><a class="brand" href="#" data-go="index" style="padding:0"><span class="mark" aria-hidden="true"></span>research</a>
+    ${ui.empty ? '' : `<button type="button" class="btn go" data-go="new">${icon('plus')}New Topic</button>`}</div>
+    ${ui.empty ? '' : '<h1>Topics</h1>'}${body}</div></main></div>`;
+}
+
+function formView(isNew) {
+  const t = TOPICS[0];
+  const sources = isNew ? '' : 'https://nodejs.org/en/blog/release/v24.0.0\nhttps://github.com/nodejs/node/blob/main/doc/changelogs/CHANGELOG_V24.md\nhttps://developer.mozilla.org/en-US/docs/Web/API/URLPattern\nftp://files.example.org/node-24-notes.txt\nhttps://openjsf.org/slides/node-24.pdf\nhttps://blog.example.dev/node-24-first-look';
+  const running = !isNew && (ui.sweep === 'reading' || ui.sweep === 'digesting');
+  return `<div class="app">${rail(isNew ? 0 : 1)}<main class="pane main"><div class="main-in">
+    <header class="topic-head"><div><h1>${isNew ? 'New Topic' : `Edit “${esc(t.name)}”`}</h1></div></header>
+    ${running ? `<div class="band run" role="status">${icon('info')}<span class="what">A Sweep of this Topic is running</span><span class="why">You can save now. The running Sweep keeps the Sources it started with.</span></div>` : ''}
+    <form class="form" onsubmit="event.preventDefault()">
+      <div class="field"><label for="f-name">Name</label><input class="input" id="f-name" value="${isNew ? '' : esc(t.name)}" placeholder="For example: Node 24 release" required></div>
+      <div class="field"><label for="f-q">Question <span style="font-weight:400;color:var(--faint)">(optional)</span></label>
+        <input class="input" id="f-q" value="${isNew ? '' : esc(t.q)}" placeholder="What do you want the Digest to answer?">
+        <span class="help">The Digest is written in the language of the question. With no question, it is written in Brazilian Portuguese.</span></div>
+      <div class="field"><label for="f-src">Sources</label>
+        <textarea class="area" id="f-src" spellcheck="false" placeholder="One address on each line, starting with https://" ${ui.refuse && !isNew ? 'aria-invalid="true" aria-describedby="f-src-err"' : ''}>${sources}</textarea>
+        ${ui.refuse && !isNew ? `<span class="field-error" id="f-src-err">${icon('alert')}<span>Line 4 is not an http or https address: <code>ftp://files.example.org/node-24-notes.txt</code>. Change it or remove it.</span></span>` : '<span class="help">research reads each page once, and no page it links to.</span>'}</div>
+      <div class="acts"><button type="submit" class="btn go">${isNew ? 'Make Topic' : 'Save'}</button><button type="button" class="btn" data-go="${isNew ? 'index' : 'topic'}">Cancel</button></div>
+    </form></div></main>${isNew ? '<aside class="pane side"></aside>' : side()}</div>`;
+}
+
+function render() {
+  const app = document.getElementById('app');
+  app.innerHTML = ui.view === 'index' ? indexView() : ui.view === 'new' ? formView(true) : ui.view === 'edit' ? formView(false) : topicView();
+  renderMock();
+}
+
+/* [n] in the Digest lights its Extract; a press on an Extract opens it in the centre. */
+document.addEventListener('click', (e) => {
+  const c = e.target.closest('.cite');
+  if (c) {
+    const n = Number(c.dataset.n);
+    ui.hit = ui.hit === n ? null : n;
+    document.querySelectorAll('.cite').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.n) === ui.hit)));
+    document.querySelectorAll('.x').forEach((x) => x.classList.toggle('hit', Number(x.dataset.x) === ui.hit));
+    const x = document.querySelector(`.x[data-x="${n}"]`);
+    if (x && ui.hit) x.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    return;
+  }
+  const x = e.target.closest('.x');
+  if (x && x.dataset.m !== 'wait') { ui.open = Number(x.dataset.x); ui.hit = null; render(); document.querySelector('.main').scrollTop = 0; return; }
+  const go = e.target.closest('[data-go]');
+  if (go) { e.preventDefault(); ui.view = go.dataset.go; ui.open = null; ui.confirm = false; render(); return; }
+  const act = e.target.closest('[data-act]');
+  if (act) {
+    e.preventDefault();
+    if (act.dataset.act === 'confirm') ui.confirm = true;
+    if (act.dataset.act === 'cancel') ui.confirm = false;
+    if (act.dataset.act === 'close') ui.open = null;
+    render();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  const x = e.target.closest && e.target.closest('.x');
+  if (x && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); x.click(); }
+  if (e.key === 'Escape' && (ui.open || ui.confirm)) { ui.open = null; ui.confirm = false; render(); }
+});
+
+/* Mock-only state switcher. */
+const MOCK = [
+  ['lab', 'View'], ['view:index', 'Topic list'], ['view:topic', 'One Topic'], ['view:new', 'New Topic'], ['view:edit', 'Edit Topic'],
+  ['lab', 'Sweep'], ['sweep:done', 'Done'], ['sweep:reading', 'Reading'], ['sweep:digesting', 'Making Digest'], ['sweep:failed', 'Failed: no command'], ['sweep:failed-cmd', 'Failed: command'],
+  ['lab', 'Other'], ['open:2', 'Open Extract 2'], ['confirm', 'Confirm delete'], ['refuse', 'Refused address'], ['empty', 'No Topics'], ['theme', 'Light / dark'],
+];
+function renderMock() {
+  document.getElementById('mock').innerHTML = MOCK.map(([k, label]) => {
+    if (k === 'lab') return `<span class="lab">${label}</span>`;
+    const [kind, val] = k.split(':');
+    const on = (kind === 'view' && ui.view === val && !ui.open) || (kind === 'sweep' && ui.sweep === val) || (kind === 'open' && ui.open === 2)
+      || (kind === 'confirm' && ui.confirm) || (kind === 'refuse' && ui.refuse) || (kind === 'empty' && ui.empty);
+    return `<button type="button" data-mock="${k}" aria-pressed="${on}">${label}</button>`;
+  }).join('');
+}
+document.getElementById('mock').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mock]');
+  if (!b) return;
+  const [kind, val] = b.dataset.mock.split(':');
+  if (kind === 'view') { ui.view = val; ui.open = null; if (val === 'index') ui.confirm = false; }
+  if (kind === 'sweep') { ui.sweep = val; ui.view = ui.view === 'index' || ui.view === 'new' ? 'topic' : ui.view; }
+  if (kind === 'open') { ui.view = 'topic'; ui.open = ui.open === 2 ? null : 2; }
+  if (kind === 'confirm') { ui.view = 'topic'; ui.open = null; ui.confirm = !ui.confirm; }
+  if (kind === 'refuse') { ui.view = 'edit'; ui.refuse = !ui.refuse; }
+  if (kind === 'empty') { ui.view = 'index'; ui.empty = !ui.empty; }
+  if (kind === 'theme') {
+    const root = document.documentElement;
+    const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme = dark ? 'light' : 'dark';
+  }
+  render();
+});
+
+render();
+</script>

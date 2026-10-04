@@ -1,0 +1,4 @@
+#!/bin/sh
+# A Node too old to run research: it says it is version 20 when the wrapper
+# asks, and runs nothing. The Host's service PATH has one like it in /usr/bin.
+echo 20

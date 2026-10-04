@@ -1,0 +1,17 @@
+node_modules/
+
+# An agent's worktrees.
+.claude/
+
+# The Plugin's own data. When this repository is also the Plugin directory the
+# Host runs, this is this machine's Topics, Sweeps and Extracts, not the
+# project's.
+research.db
+research.db-journal
+research.db-wal
+research.db-shm
+
+# What a design review leaves behind: screenshots and the choices made on the
+# way. The approved mock and the design context stay in .impeccable/.
+.impeccable/review/
+.impeccable/decision/

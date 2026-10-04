@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>research</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<!-- Three panes: the Topics on the left, the Digest in the centre, the Sweeps
+     and Extracts on the right. With the class "index", only the centre shows,
+     and it holds the list of Topics. -->
+<div class="app index" id="app">
+  <nav class="pane rail" id="rail" aria-label="Topics">
+    <a class="brand" href="#"><span class="mark" aria-hidden="true"></span>research</a>
+    <div class="rail-head"><span>Topics</span></div>
+  </nav>
+
+  <main class="pane main" id="main">
+    <div class="index-in" id="index">
+      <div class="index-head">
+        <a class="brand" href="#"><span class="mark" aria-hidden="true"></span>research</a>
+      </div>
+
+      <!-- What is wrong, when the Plugin Server cannot be reached. -->
+      <div class="band fail" id="trouble" role="alert" hidden>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg>
+        <span class="what">research cannot reach its Plugin Server</span>
+        <span class="why" id="trouble-why"></span>
+      </div>
+
+      <div class="empty" id="no-topics" hidden>
+        <h2>No Topics yet</h2>
+        <p>A Topic is one subject you research: a name, an optional question, and the pages to read. research reads each page and makes a Digest of what they say.</p>
+      </div>
+    </div>
+  </main>
+
+  <aside class="pane side" id="side" aria-label="Sweeps and Extracts"></aside>
+</div>
+<script src="rpc.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
