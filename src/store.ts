@@ -43,6 +43,35 @@ const STEPS: readonly string[] = [
     UNIQUE (topic_id, position)
   );
   `,
+  // A Sweep and its Extracts. A Sweep belongs to its Topic and goes with it.
+  // An Extract keeps its own copy of the address it read, taken when the
+  // Sweep started, so editing or deleting a Source never reaches it. An
+  // Extract is `waiting`, then `reading`, then `read`, `thin` or `failed`;
+  // its text is null until it is read, and its reason is null unless it failed.
+  `
+  CREATE TABLE sweeps (
+    id INTEGER PRIMARY KEY,
+    topic_id INTEGER NOT NULL REFERENCES topics (id) ON DELETE CASCADE,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    state TEXT NOT NULL CHECK (state IN ('reading', 'digesting', 'done', 'failed')),
+    reason TEXT,
+    digest TEXT,
+    digest_at TEXT
+  );
+  CREATE INDEX sweeps_of_topic ON sweeps (topic_id, id);
+  CREATE TABLE extracts (
+    sweep_id INTEGER NOT NULL REFERENCES sweeps (id) ON DELETE CASCADE,
+    n INTEGER NOT NULL,
+    address TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('waiting', 'reading', 'read', 'thin', 'failed')),
+    text TEXT,
+    reason TEXT,
+    content_type TEXT,
+    read_at TEXT,
+    PRIMARY KEY (sweep_id, n)
+  );
+  `,
 ];
 
 /** Open `research.db`, making it when it is not there, and bring it up to the current version. */

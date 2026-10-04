@@ -16,6 +16,14 @@
  * A test drives the page as a person would (open an address, press a button,
  * type, press Escape) and reads what a person would see. No module of
  * research is imported, and no tool is faked.
+ *
+ * Two things a browser has are bent, so a test stays fast and exact:
+ *
+ * - an item the page draws inside a declared element (a Sweep, an Extract)
+ *   is pressed with `pressIn`, which sends the click to that element's
+ *   listeners with the item as its target, as a browser bubbles it;
+ * - a wait of a second or more, such as the page's poll while a Sweep runs,
+ *   passes only when a test says so with `later()`, so no test sleeps for it.
  */
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -30,6 +38,9 @@ export const WEB = join(REPOSITORY, 'web');
 
 /** How long a test waits for the page to settle before it gives up. */
 const SETTLE_TIMEOUT_MS = 10_000;
+
+/** A wait this long or longer passes only when a test calls `later()`. */
+const LONG_WAIT_MS = 1_000;
 
 /**
  * A stand-in for the Host's `POST /p/research/rpc`: it hands each JSON-RPC body
@@ -54,12 +65,26 @@ export async function hostFor(t: TestContext, plugin: Started): Promise<string> 
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}/p/research/`;
 }
 
+/** What an event names as its target: an element, or an item drawn inside one. */
+type Target = PageElement | DrawnItem;
+
 /** One event as the page's listeners get it. */
 type PageEvent = {
   readonly type: string;
-  readonly target: PageElement;
+  readonly target: Target;
   readonly key?: string;
   preventDefault(): void;
+};
+
+/**
+ * One item the page drew into an element's markup, as a click's target sees
+ * it: its attributes, and `closest` for a selector of one attribute, such as
+ * `[data-x]`, which matches the item itself.
+ */
+export type DrawnItem = {
+  getAttribute(name: string): string | null;
+  hasAttribute(name: string): boolean;
+  closest(selector: string): DrawnItem | null;
 };
 
 type Listener = (event: PageEvent) => unknown;
@@ -73,6 +98,11 @@ export type PageElement = {
   innerHTML: string;
   value: string;
   title: string;
+  /** The custom properties the page set on it, such as the meter's `--done`. */
+  readonly style: {
+    setProperty(name: string, value: string): void;
+    getPropertyValue(name: string): string;
+  };
   readonly classList: {
     add(name: string): void;
     remove(name: string): void;
@@ -100,6 +130,13 @@ export type OpenPage = {
   hash(): string;
   /** Press a key with nothing in particular focused. */
   key(name: string): void;
+  /**
+   * Press the item drawn inside element `id` whose `attribute` is `value`,
+   * as a person presses a Sweep or an Extract. A disabled one takes no click.
+   */
+  pressIn(id: string, attribute: string, value: string): void;
+  /** Let every wait of a second or more pass now, as if the time had gone by. */
+  later(): void;
   /** The element that has focus, or null. */
   focused(): PageElement | null;
   /** Every tool the page has called, by name, in order. */
@@ -145,10 +182,13 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
   });
 
   const elements = new Map<string, PageElement>();
+  const listenersOf = new Map<string, Map<string, Listener[]>>();
   for (const [id, hidden] of declared(html)) {
     const listeners = new Map<string, Listener[]>();
+    listenersOf.set(id, listeners);
     const attributes = new Map<string, string>();
     const classes = new Set<string>();
+    const properties = new Map<string, string>();
     const element: PageElement = {
       id,
       hidden,
@@ -157,6 +197,10 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
       innerHTML: '',
       value: '',
       title: '',
+      style: {
+        setProperty: (name, value) => void properties.set(name, String(value)),
+        getPropertyValue: (name) => properties.get(name) ?? '',
+      },
       classList: {
         add: (name) => void classes.add(name),
         remove: (name) => void classes.delete(name),
@@ -202,10 +246,25 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
     },
   };
 
+  // A long wait is held here, by a number of its own, until `later()`.
+  const waits = new Map<number, () => void>();
+  let waitCount = 0;
+  const pageSetTimeout = (run: () => void, ms = 0): unknown => {
+    if (ms < LONG_WAIT_MS) return setTimeout(run, ms);
+    waitCount += 1;
+    waits.set(waitCount, run);
+    return waitCount;
+  };
+  const pageClearTimeout = (handle: unknown): void => {
+    if (typeof handle === 'number') waits.delete(handle);
+    else clearTimeout(handle as NodeJS.Timeout);
+  };
+
   const context = createContext({
     console,
-    setTimeout,
-    clearTimeout,
+    URL,
+    setTimeout: pageSetTimeout,
+    clearTimeout: pageClearTimeout,
     location,
     document: {
       getElementById: (id: string) => elements.get(id) ?? null,
@@ -255,6 +314,34 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
     },
     hash: () => fragment,
     key: (name) => fire(documentListeners, eventFor('keydown', elements.get('app')!, name)),
+    pressIn: (id, attribute, value) => {
+      const markup = opened.byId(id).innerHTML;
+      const item = [...markup.matchAll(/<[a-z][a-z0-9]*\b([^>]*)>/g)]
+        .map((tag) => attributesOf(tag[1] ?? ''))
+        .find((attributes) => attributes.get(attribute) === value);
+      if (item === undefined) throw new Error(`#${id} shows nothing with ${attribute}="${value}".`);
+      // A browser sends no click to a disabled button.
+      if (item.has('disabled')) return;
+      const drawn: DrawnItem = {
+        getAttribute: (name) => item.get(name) ?? null,
+        hasAttribute: (name) => item.has(name),
+        closest: (selector) => {
+          const wanted = /^\[([^\]=]+)\]$/.exec(selector);
+          if (wanted === null) throw new Error(`pressIn knows no selector ${selector}.`);
+          return item.has(wanted[1] ?? '') ? drawn : null;
+        },
+      };
+      fire(listenersOf.get(id)!, {
+        type: 'click',
+        target: drawn,
+        preventDefault: () => undefined,
+      });
+    },
+    later: () => {
+      const due = [...waits.values()];
+      waits.clear();
+      for (const run of due) run();
+    },
     focused: () => focused,
     called: () => called,
     settled: async () => {
@@ -273,4 +360,21 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
   };
   await opened.settled();
   return opened;
+}
+
+/** The attributes of one tag, by name, with the markup's escapes undone. */
+function attributesOf(markup: string): Map<string, string> {
+  const attributes = new Map<string, string>();
+  const unescape = (text: string): string =>
+    text
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
+  for (const found of markup.matchAll(
+    /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g,
+  )) {
+    attributes.set(found[1] ?? '', unescape(found[2] ?? found[3] ?? found[4] ?? ''));
+  }
+  return attributes;
 }

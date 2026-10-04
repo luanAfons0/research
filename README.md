@@ -28,9 +28,10 @@ that runs as it is (ADR-0001).
 
 The Plugin Server reads these from its environment, which is the Host's:
 
-| Variable        | What it is                                          |
-| --------------- | --------------------------------------------------- |
-| `RESEARCH_NODE` | The Node 24 that `mcp` runs, when `PATH` has none.  |
+| Variable                    | What it is                                                         |
+| --------------------------- | ------------------------------------------------------------------ |
+| `RESEARCH_NODE`             | The Node 24 that `mcp` runs, when `PATH` has none.                 |
+| `RESEARCH_FETCH_TIMEOUT_MS` | How long one Source may take to answer, body and all. Default `30000`. |
 
 When the Host runs as a systemd service, give it the settings with a drop-in,
 which `firstmate service on` leaves alone:
@@ -65,7 +66,42 @@ Sources. On the Plugin Page, press **New Topic**, and type the Sources one
 address on each line. An address that is not `http` or `https` is refused, and
 the page names its line. A Topic opens at `#topic/<id>`, so a reload or a link
 lands on the same Topic. Deleting a Topic asks for confirmation first, and its
-Sources go with it.
+Sources and Sweeps go with it.
+
+## Sweeps
+
+Press **Sweep now** on a Topic. A **Sweep** reads each Source once, as one
+page and no page it links to, and keeps an **Extract** of each: the readable
+text of the page, or the reason it could not be read. The page shows how many
+Sources are read while the Sweep runs, the Sweeps of the Topic from new to
+old, and the Extracts of the one you pick. Press an Extract to read its whole
+text; Escape closes it. Every Sweep is kept until you delete it with its trash
+button.
+
+How a Source is read (ADR-0001):
+
+- with Node's own `fetch`, redirects followed, and the User-Agent
+  `research (FirstMate Plugin)`;
+- for 30 seconds at most, body and all (`RESEARCH_FETCH_TIMEOUT_MS`);
+- at most 4 Sources of one Sweep at the same time;
+- only `text/html` and `text/plain`, and only up to 5 MB. Any other type gives
+  the Extract `not read: <type>`, a status that is not 2xx gives `HTTP <status>`,
+  and a network error or a timeout gives its reason;
+- from a page, research keeps the `<article>`, else the `<main>`, else the
+  `<body>`, without scripts, styles, menus, headers, footers, asides and
+  forms, as headings and paragraphs of plain text. A page with very little
+  text is kept and marked: it may make its text with JavaScript, which research
+  does not run.
+
+A Sweep is `reading`, then `digesting`, then `done`, or `failed` with a reason.
+research does not make a Digest yet, so a Sweep that reads its Sources ends
+`failed` with the reason `no Digest command is set in RESEARCH_DIGEST_COMMAND`,
+and keeps every Extract. A Sweep where no Source could be read ends `failed`
+with that reason. Only one Sweep of a Topic runs at a time; Sweeps of different
+Topics run at the same time. A Sweep reads the Sources the Topic had when it
+started, so you can edit the Topic while it runs. If the Plugin Server stops
+during a Sweep, the next start marks that Sweep `failed`: the Plugin Server
+stopped before the Sweep ended.
 
 ## Tools
 
@@ -75,10 +111,13 @@ id. Each refusal is a JSON-RPC error with a sentence.
 | Tool           | Arguments                              | What it answers                                         |
 | -------------- | -------------------------------------- | ------------------------------------------------------- |
 | `list_topics`  | none                                   | `topics`: each Topic with `sourceCount`, `lastSweepAt` and `lastSweepState` (null until it is swept). |
-| `get_topic`    | `id`                                   | `topic`: its name, question, `sources` in order, and `sweeps` from new to old. |
+| `get_topic`    | `id`                                   | `topic`: its name, question, `sources` in order, and `sweeps` from new to old, each with `id`, `startedAt`, `endedAt`, `state`, `reason`, `sourceCount` and `readCount`. |
 | `create_topic` | `name`, `question` (optional), `sources` (optional list of addresses) | `topic`, as `get_topic` gives it. |
 | `update_topic` | `id`, and any of `name`, `question`, `sources` | `topic`. What is not given is kept; `sources` replaces the whole list. |
-| `delete_topic` | `id`                                   | `deleted`: the id and name of the Topic. Its Sources go with it. |
+| `delete_topic` | `id`                                   | `deleted`: the id and name of the Topic. Its Sources and Sweeps go with it. |
+| `sweep_topic`  | `id` (a Topic)                         | `sweep`, at once, as `get_topic` lists it. The reading goes on after the answer. Refused while a Sweep of that Topic runs, and for a Topic with no Sources. |
+| `get_sweep`    | `id` (a Sweep), or `topic` alone        | `sweep`: its state, `reason`, `digest`, and `extracts`, each with `n`, `address`, `state` (`waiting`, `reading`, `read`, `thin` or `failed`), `text`, `characters`, `note`, `reason`, `contentType` and `readAt`. With `topic` alone, its latest Sweep, or null. |
+| `delete_sweep` | `id` (a Sweep)                         | `deleted`: the id of the Sweep and of its Topic. Refused while that Sweep runs. |
 
 An address that is not `http:` or `https:` is refused with a sentence that
 names it, and nothing is saved. That refusal also carries

@@ -11,6 +11,7 @@
  */
 import { badInput } from './mcp.ts';
 import { now, type Store } from './store.ts';
+import { sweepsOf, type SweepSummary } from './sweeps.ts';
 
 /** One Topic as list_topics gives it: no Sources, only how many. */
 export type TopicSummary = {
@@ -33,8 +34,8 @@ export type TopicView = {
   readonly madeAt: string;
   /** The addresses of its Sources, in order. */
   readonly sources: readonly string[];
-  /** Its Sweeps, new to old. */
-  readonly sweeps: readonly unknown[];
+  /** Its Sweeps, new to old, without their Extracts. */
+  readonly sweeps: readonly SweepSummary[];
 };
 
 /** What the operator gives when making or changing a Topic. */
@@ -56,18 +57,25 @@ export function listTopics(store: Store): readonly TopicSummary[] {
   const rows = store
     .prepare(
       'SELECT topics.*, ' +
-        '(SELECT COUNT(*) FROM sources WHERE topic_id = topics.id) AS source_count ' +
+        '(SELECT COUNT(*) FROM sources WHERE topic_id = topics.id) AS source_count, ' +
+        '(SELECT started_at FROM sweeps WHERE topic_id = topics.id ORDER BY id DESC LIMIT 1) ' +
+        'AS last_sweep_at, ' +
+        '(SELECT state FROM sweeps WHERE topic_id = topics.id ORDER BY id DESC LIMIT 1) ' +
+        'AS last_sweep_state ' +
         'FROM topics ORDER BY id',
     )
-    .all() as (TopicRow & { readonly source_count: number })[];
-  // A Sweep does not exist yet, so its two fields are there and empty.
+    .all() as (TopicRow & {
+    readonly source_count: number;
+    readonly last_sweep_at: string | null;
+    readonly last_sweep_state: string | null;
+  })[];
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
     question: row.question,
     sourceCount: row.source_count,
-    lastSweepAt: null,
-    lastSweepState: null,
+    lastSweepAt: row.last_sweep_at,
+    lastSweepState: row.last_sweep_state,
   }));
 }
 
@@ -83,7 +91,7 @@ export function viewOf(store: Store, id: number): TopicView {
     question: row.question,
     madeAt: row.made_at,
     sources: sources.map((source) => source.address),
-    sweeps: [],
+    sweeps: sweepsOf(store, id),
   };
 }
 

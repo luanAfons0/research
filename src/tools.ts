@@ -7,8 +7,16 @@
  * twice: as text, for whoever reads it in a terminal, and as structure, for
  * the Page, which draws it. Each refusal is a JSON-RPC error with a sentence.
  */
-import type { InputSchema, Tool, ToolResult } from './mcp.ts';
-import { within, type Store } from './store.ts';
+import { badInput, type InputSchema, type Tool, type ToolResult } from './mcp.ts';
+import { within } from './store.ts';
+import {
+  checkSweepId,
+  deleteSweep,
+  latestSweep,
+  startSweep,
+  sweepView,
+  type Sweeping,
+} from './sweeps.ts';
 import {
   changeTopic,
   checkTopicId,
@@ -19,10 +27,8 @@ import {
   viewOf,
 } from './topics.ts';
 
-/** What the tools work over. */
-export type Parts = {
-  readonly store: Store;
-};
+/** What the tools work over: the data file, and how a Sweep reads its Sources. */
+export type Parts = Sweeping;
 
 const ID = { type: 'integer', description: 'The id of the Topic, from list_topics.' };
 const NAME = { type: 'string', description: 'One line that names the Topic.' };
@@ -39,11 +45,14 @@ const SOURCES = {
     'that page and no page it links to.',
 };
 
+const SWEEP_ID = { type: 'integer', description: 'The id of the Sweep, from get_topic.' };
+
 /** Only the id of a Topic. */
 const BY_ID: InputSchema = { type: 'object', properties: { id: ID }, required: ['id'] };
 
 /** The tools, over the parts of one running Plugin Server. */
-export function toolsFor({ store }: Parts): readonly Tool[] {
+export function toolsFor(parts: Parts): readonly Tool[] {
+  const { store } = parts;
   return [
     {
       name: 'list_topics',
@@ -102,6 +111,61 @@ export function toolsFor({ store }: Parts): readonly Tool[] {
       call: (given) => {
         const id = checkTopicId('delete_topic', given['id']);
         return told({ deleted: within(store, () => deleteTopic(store, id)) });
+      },
+    },
+
+    {
+      name: 'sweep_topic',
+      description:
+        'Start a Sweep of a Topic: each of its Sources is read once, as one page and no page ' +
+        'it links to. It answers at once with the new Sweep; get_sweep shows its progress. ' +
+        'It is refused while a Sweep of that Topic runs.',
+      inputSchema: BY_ID,
+      call: (given) => {
+        const topic = viewOf(store, checkTopicId('sweep_topic', given['id']));
+        return told({ sweep: startSweep(parts, topic) });
+      },
+    },
+
+    {
+      name: 'get_sweep',
+      description:
+        'One Sweep: its state, why it failed, its Digest, and each Extract with its text or ' +
+        'the reason it has none. Give "id" for one Sweep, or "topic" alone for the latest ' +
+        'Sweep of that Topic (null when it was never swept).',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: SWEEP_ID,
+          topic: { type: 'integer', description: 'The id of a Topic, for its latest Sweep.' },
+        },
+        required: [],
+      },
+      call: (given) => {
+        if (given['id'] !== undefined) {
+          const sweep = sweepView(store, checkSweepId('get_sweep', 'id', given['id']));
+          if (given['topic'] !== undefined && given['topic'] !== sweep.topicId) {
+            throw badInput(`Sweep ${sweep.id} is not a Sweep of Topic ${String(given['topic'])}.`);
+          }
+          return told({ sweep });
+        }
+        if (given['topic'] === undefined) {
+          throw badInput('get_sweep needs "id", a Sweep, or "topic", for its latest Sweep.');
+        }
+        const topic = viewOf(store, checkTopicId('get_sweep', given['topic']));
+        return told({ sweep: latestSweep(store, topic.id) });
+      },
+    },
+
+    {
+      name: 'delete_sweep',
+      description:
+        'Delete a Sweep for good, with its Extracts and its Digest. It is refused while that ' +
+        'Sweep runs.',
+      inputSchema: { type: 'object', properties: { id: SWEEP_ID }, required: ['id'] },
+      call: (given) => {
+        const id = checkSweepId('delete_sweep', 'id', given['id']);
+        return told({ deleted: within(store, () => deleteSweep(store, id)) });
       },
     },
   ];

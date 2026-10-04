@@ -17,6 +17,8 @@ import {
   startedAndShaken,
   startPluginServer,
 } from './helpers/plugin.ts';
+import { serveSources } from './helpers/sources.ts';
+import { sweepNamed, sweptWhole } from './helpers/sweeps.ts';
 
 const run = promisify(execFile);
 
@@ -38,6 +40,20 @@ test('the data file is kept when the Plugin Server stops and starts again', asyn
   const second = await startedAndShaken(t, { directory: first.directory });
 
   assert.ok((await stat(join(second.directory, 'research.db'))).isFile());
+  assert.equal(second.output(), '');
+});
+
+test('a Sweep and its Extracts are kept in the data file, and nowhere else', async (t) => {
+  const sources = await serveSources(t);
+  const first = await startedAndShaken(t);
+  const sweep = await sweptWhole(first, [sources.address('/article.html'), sources.address('/missing')]);
+  first.stop();
+  await first.ended();
+
+  const second = await startedAndShaken(t, { directory: first.directory });
+
+  assert.deepEqual(await sweepNamed(second, sweep.id), sweep);
+  assert.deepEqual(await readdir(second.directory), ['research.db']);
   assert.equal(second.output(), '');
 });
 
