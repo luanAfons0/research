@@ -238,6 +238,19 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .field-error { display: flex; gap: 6px; align-items: flex-start; color: var(--fail); font-size: 14px; }
 .field-error svg.i { margin-top: 2px; }
 .form .acts { padding-top: 4px; }
+.field .label { font-weight: 600; font-size: 14px; }
+.input[aria-invalid="true"] { border-color: var(--fail); }
+.srcs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.src { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 2px 8px; align-items: start; padding: 7px 6px 7px 10px; border-radius: var(--radius); background: var(--pane); border: 1px solid var(--line); }
+.src .n { font: 600 12px/20px var(--sans); color: var(--accent); background: var(--accent-soft); border-radius: 5px; text-align: center; height: 20px; margin-top: 6px; }
+.src .host { grid-column: 2; grid-row: 1; padding-top: 6px; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.src .path { grid-column: 2; grid-row: 2; padding-bottom: 4px; font: 12px/1.35 var(--mono); color: var(--faint); overflow-wrap: anywhere; }
+.src-acts { grid-column: 3; grid-row: 1 / span 2; display: flex; gap: 2px; }
+.src-acts .btn { width: 32px; min-height: 32px; padding: 0; justify-content: center; }
+.src-none { margin: 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--radius); font-size: 13px; color: var(--faint); }
+.src-add { display: flex; gap: 8px; }
+.src-add .input { flex: 1; min-width: 0; }
+.input.addr { font: 14px/1.45 var(--mono); }
 
 /* Mock-only toolbar: outside the design */
 .mock {
@@ -297,6 +310,8 @@ const ICON = {
   check: '<path d="M3 8.5l3.2 3L13 4.5"/>',
   cut: '<circle cx="4.5" cy="11.5" r="2"/><circle cx="11.5" cy="11.5" r="2"/><path d="M5.8 10L12 2.5M10.2 10L4 2.5"/>',
   dot: '<circle cx="8" cy="8" r="2.4"/>',
+  up: '<path d="M8 13V3M4 7l4-4 4 4"/>',
+  down: '<path d="M8 3v10M4 9l4 4 4-4"/>',
 };
 const icon = (name) => `<svg class="i" viewBox="0 0 16 16" aria-hidden="true">${ICON[name]}</svg>`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -477,7 +492,8 @@ function indexView() {
 
 function formView(isNew) {
   const t = TOPICS[0];
-  const sources = isNew ? '' : 'https://nodejs.org/en/blog/release/v24.0.0\nhttps://github.com/nodejs/node/blob/main/doc/changelogs/CHANGELOG_V24.md\nhttps://developer.mozilla.org/en-US/docs/Web/API/URLPattern\nftp://files.example.org/node-24-notes.txt\nhttps://openjsf.org/slides/node-24.pdf\nhttps://blog.example.dev/node-24-first-look';
+  const sources = isNew ? [] : ['https://nodejs.org/en/blog/release/v24.0.0', 'https://github.com/nodejs/node/blob/main/doc/changelogs/CHANGELOG_V24.md', 'https://developer.mozilla.org/en-US/docs/Web/API/URLPattern', 'https://openjsf.org/slides/node-24.pdf', 'https://blog.example.dev/node-24-first-look'];
+  const srcRow = (a, i) => { const u = new URL(a); return `<li class="src" data-src="${i}"><span class="n">${i + 1}</span><span class="host">${esc(u.host)}</span><span class="path">${esc(u.pathname)}</span><span class="src-acts"><button type="button" class="btn quiet" aria-label="Move ${esc(a)} up"${i === 0 ? ' disabled' : ''}>${icon('up')}</button><button type="button" class="btn quiet" aria-label="Move ${esc(a)} down"${i === sources.length - 1 ? ' disabled' : ''}>${icon('down')}</button><button type="button" class="btn quiet" aria-label="Remove ${esc(a)}">${icon('trash')}</button></span></li>`; };
   const running = !isNew && (ui.sweep === 'reading' || ui.sweep === 'digesting');
   return `<div class="app">${rail(isNew ? 0 : 1)}<main class="pane main"><div class="main-in">
     <header class="topic-head"><div><h1>${isNew ? 'New Topic' : `Edit “${esc(t.name)}”`}</h1></div></header>
@@ -487,9 +503,11 @@ function formView(isNew) {
       <div class="field"><label for="f-q">Question <span style="font-weight:400;color:var(--faint)">(optional)</span></label>
         <input class="input" id="f-q" value="${isNew ? '' : esc(t.q)}" placeholder="What do you want the Digest to answer?">
         <span class="help">The Digest is written in the language of the question. With no question, it is written in Brazilian Portuguese.</span></div>
-      <div class="field"><label for="f-src">Sources</label>
-        <textarea class="area" id="f-src" spellcheck="false" placeholder="One address on each line, starting with https://" ${ui.refuse && !isNew ? 'aria-invalid="true" aria-describedby="f-src-err"' : ''}>${sources}</textarea>
-        ${ui.refuse && !isNew ? `<span class="field-error" id="f-src-err">${icon('alert')}<span>Line 4 is not an http or https address: <code>ftp://files.example.org/node-24-notes.txt</code>. Change it or remove it.</span></span>` : '<span class="help">research reads each page once, and no page it links to.</span>'}</div>
+      <div class="field" role="group" aria-labelledby="f-src-label"><span class="label" id="f-src-label">Sources${sources.length ? ` <span style="font-weight:400;color:var(--faint)">(${sources.length})</span>` : ''}</span>
+        ${sources.length ? `<ol class="srcs" aria-labelledby="f-src-label">${sources.map(srcRow).join('')}</ol>` : '<p class="src-none">No Sources yet. Add the pages to read, one at a time or many at once.</p>'}
+        <div class="src-add"><input class="input addr" id="f-src-add" inputmode="url" spellcheck="false" placeholder="https://…" aria-label="Add a Source" value="${ui.refuse && !isNew ? 'ftp://files.example.org/node-24-notes.txt' : ''}" ${ui.refuse && !isNew ? 'aria-invalid="true" aria-describedby="f-src-err"' : ''}><button type="button" class="btn">${icon('plus')}Add</button></div>
+        ${ui.refuse && !isNew ? `<span class="field-error" id="f-src-err">${icon('alert')}<span><code>ftp://files.example.org/node-24-notes.txt</code> is not an http or https address.</span></span>` : ''}
+        <span class="help">research reads each page once, and no page it links to.</span></div>
       <div class="acts"><button type="submit" class="btn go">${isNew ? 'Make Topic' : 'Save'}</button><button type="button" class="btn" data-go="${isNew ? 'index' : 'topic'}">Cancel</button></div>
     </form></div></main>${isNew ? '<aside class="pane side"></aside>' : side()}</div>`;
 }

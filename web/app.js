@@ -10,7 +10,13 @@
 
    The Digest is drawn by markdown.js, which escapes every character before it
    reads any Markdown, so a Digest can never become markup. Each [n] in it is
-   then drawn as a button that lights Extract n on the right. */
+   then drawn as a button that lights Extract n on the right.
+
+   The form keeps its Sources as a list the operator builds one address at a
+   time, or many at once from a paste, and puts in order: the order gives
+   each Source the [n] of the next Sweep. The page refuses at once what is not
+   an http or https address, or is in the list already; the Plugin Server
+   still checks every address, and a refusal of its own shows on the row. */
 'use strict';
 
 /** The words and the colour class of each state a last Sweep can be in. */
@@ -36,6 +42,8 @@ const ICONS = {
   cut:
     '<circle cx="4.5" cy="11.5" r="2"/><circle cx="11.5" cy="11.5" r="2"/>' +
     '<path d="M5.8 10L12 2.5M10.2 10L4 2.5"/>',
+  up: '<path d="M8 13V3M4 7l4-4 4 4"/>',
+  down: '<path d="M8 3v10M4 9l4 4 4-4"/>',
 };
 
 /**
@@ -178,6 +186,14 @@ let lit = null;
 let drawing = 0;
 /** The next time the page asks again while a Sweep runs. */
 let poll = null;
+/** The Sources in the form, in order: what create_topic and update_topic get. */
+let draft = [];
+/** The rows the last Add put in the list, by index, so only they fade in. */
+let fresh = [];
+/** The row the last move put in place, by index, so it shows where it went. */
+let moved = null;
+/** What the Plugin Server refused at the last save, as { index, message }, or null. */
+let rowRefusal = null;
 
 /**
  * Ask for what the address fragment names, then draw it. With `quiet`, it
@@ -610,8 +626,234 @@ function drawForm(topic) {
   byId('form-submit').disabled = false;
   byId('f-name').value = topic ? topic.name : '';
   byId('f-q').value = topic ? topic.question : '';
-  byId('f-src').value = topic ? topic.sources.join('\n') : '';
+  draft = topic ? topic.sources.slice() : [];
+  byId('f-src-add').value = '';
   clearRefusals();
+  drawSources(null);
+}
+
+/**
+ * The addresses in a piece of text, in order: one on each line, or split by
+ * spaces or commas. A comma inside an address stays, unless another address
+ * starts right after it.
+ */
+function addressesIn(text) {
+  return text
+    .split(/\s+/)
+    .flatMap((part) => part.split(/,(?=[a-z][a-z0-9+.-]*:)/i))
+    .map((part) => part.replace(/^,+|,+$/g, ''))
+    .filter((part) => part !== '');
+}
+
+/** An address as the page compares it, so "https://Example.org" is "https://example.org/". */
+function sameAs(address) {
+  try {
+    return new URL(address).href;
+  } catch {
+    return address;
+  }
+}
+
+/**
+ * Why an address cannot join the list, as markup, or '' when it can. The
+ * page checks the start alone; the Plugin Server checks the whole address
+ * when the form is saved.
+ */
+function refusalOf(address) {
+  const shown = '<code>' + esc(address) + '</code>';
+  if (!/^https?:\/\//i.test(address)) return shown + ' is not an http or https address.';
+  if (draft.some((each) => sameAs(each) === sameAs(address))) {
+    return shown + ' is already in the list.';
+  }
+  return '';
+}
+
+/**
+ * Add each address in the text to the end of the list, in order. What is
+ * refused stays in the box after `kept`, so it can be fixed, and the reason
+ * shows under it. It says whether every address was added.
+ */
+function addSources(text, kept) {
+  const refused = [];
+  const reasons = [];
+  const before = draft.length;
+  for (const address of addressesIn(text)) {
+    const reason = refusalOf(address);
+    if (reason === '') draft.push(address);
+    else {
+      refused.push(address);
+      reasons.push(reason);
+    }
+  }
+  fresh = [];
+  for (let at = before; at < draft.length; at += 1) fresh.push(at);
+  if (draft.length !== before) rowRefusal = null;
+  byId('f-src-add').value = [kept.trim()]
+    .concat(refused)
+    .filter((part) => part !== '')
+    .join(' ');
+  showAddRefusal(reasons.join(' '));
+  drawSources(null);
+  return refused.length === 0;
+}
+
+/** Say under the box why an address was not added, or say nothing. */
+function showAddRefusal(markup) {
+  const box = byId('f-src-add');
+  byId('f-src-add-err-text').innerHTML = markup;
+  byId('f-src-add-err').hidden = markup === '';
+  if (markup === '') {
+    box.removeAttribute('aria-invalid');
+    box.setAttribute('aria-describedby', 'f-src-help');
+  } else {
+    box.setAttribute('aria-invalid', 'true');
+    box.setAttribute('aria-describedby', 'f-src-add-err f-src-help');
+  }
+}
+
+/** The list of Sources, its count in the label, and focus on `focus`, a selector, if given. */
+function drawSources(focus) {
+  const list = byId('f-src-list');
+  byId('f-src-count').textContent = draft.length === 0 ? '' : '(' + draft.length + ')';
+  byId('f-src-none').hidden = draft.length !== 0;
+  list.hidden = draft.length === 0;
+  list.innerHTML = draft.map(sourceRow).join('');
+  fresh = [];
+  moved = null;
+  if (focus === null) return;
+  const item = list.querySelector(focus);
+  if (item) item.focus();
+}
+
+/**
+ * One Source in the form: its number, its address as the Extracts show it,
+ * and its buttons. The number is the [n] it gets in the next Sweep.
+ */
+function sourceRow(address, at) {
+  const parts = partsOf(address);
+  const bad = rowRefusal !== null && rowRefusal.index === at;
+  const named = esc(address);
+  return (
+    '<li class="src' +
+    (fresh.includes(at) ? ' fresh' : '') +
+    (moved === at ? ' moved' : '') +
+    (bad ? ' bad' : '') +
+    '" data-src="' +
+    at +
+    '"><span class="n">' +
+    (at + 1) +
+    '</span><span class="host">' +
+    esc(parts.host) +
+    '</span><span class="path">' +
+    esc(parts.path) +
+    '</span><span class="src-acts">' +
+    sourceButton('up', at, at === 0, 'Move ' + named + ' up') +
+    sourceButton('down', at, at === draft.length - 1, 'Move ' + named + ' down') +
+    '<button type="button" class="btn quiet" data-remove="' +
+    at +
+    '" aria-label="Remove ' +
+    named +
+    '"' +
+    (bad ? ' aria-describedby="f-src-row-err"' : '') +
+    '>' +
+    icon('trash') +
+    '</button></span>' +
+    (bad
+      ? '<span class="src-err" id="f-src-row-err">' +
+        icon('alert') +
+        '<span>' +
+        esc(rowRefusal.message) +
+        '</span></span>'
+      : '') +
+    '</li>'
+  );
+}
+
+/** One move button of a row; the first row has no up, and the last no down. */
+function sourceButton(way, at, off, label) {
+  return (
+    '<button type="button" class="btn quiet" data-' +
+    way +
+    '="' +
+    at +
+    '" aria-label="' +
+    label +
+    '"' +
+    (off ? ' disabled' : '') +
+    '>' +
+    icon(way) +
+    '</button>'
+  );
+}
+
+/** The index of the row a press or a key came from, and which control it was. */
+function sourceTarget(target) {
+  if (!target || !target.closest) return null;
+  for (const control of ['up', 'down', 'remove', 'src']) {
+    const found = target.closest('[data-' + control + ']');
+    if (found) return { at: Number(found.getAttribute('data-' + control)), control: control };
+  }
+  return null;
+}
+
+/** Move a Source one place up or down, and keep the focus on the control that moved it. */
+function moveSource(at, by, control) {
+  const to = at + by;
+  if (to < 0 || to >= draft.length) return;
+  const [address] = draft.splice(at, 1);
+  draft.splice(to, 0, address);
+  rowRefusal = null;
+  moved = to;
+  // A move button at the end of the list is off, so the focus goes to its pair.
+  let keep = control === 'src' ? 'remove' : control;
+  if (keep === 'up' && to === 0) keep = 'down';
+  if (keep === 'down' && to === draft.length - 1) keep = 'up';
+  drawSources('[data-' + keep + '="' + to + '"]');
+}
+
+/** Remove a Source, and put the focus on the row that takes its place. */
+function removeSource(at) {
+  draft.splice(at, 1);
+  rowRefusal = null;
+  if (draft.length === 0) {
+    drawSources(null);
+    byId('f-src-add').focus();
+    return;
+  }
+  drawSources('[data-remove="' + Math.min(at, draft.length - 1) + '"]');
+}
+
+/** A press in the list of Sources: move one, or remove it. */
+function onSourceList(event) {
+  const pressed = sourceTarget(event.target);
+  if (pressed === null) return;
+  if (pressed.control === 'up') moveSource(pressed.at, -1, 'up');
+  if (pressed.control === 'down') moveSource(pressed.at, 1, 'down');
+  if (pressed.control === 'remove') removeSource(pressed.at);
+}
+
+/** Alt+ArrowUp and Alt+ArrowDown move the row the focus is in. */
+function onSourceKey(event) {
+  if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+  const from = sourceTarget(event.target);
+  if (from === null) return;
+  event.preventDefault();
+  moveSource(from.at, event.key === 'ArrowUp' ? -1 : 1, from.control);
+}
+
+/** Add what the box holds, and keep the focus in it for the next one. */
+function addTyped() {
+  const box = byId('f-src-add');
+  addSources(box.value, '');
+  box.focus();
+}
+
+/** A paste of more than one address adds each one; a paste of one lands in the box. */
+function onSourcePaste(event) {
+  const text = event.clipboardData ? event.clipboardData.getData('text') : '';
+  if (addressesIn(text).length < 2) return;
+  event.preventDefault();
+  addSources(text, byId('f-src-add').value);
 }
 
 /** Say why the page cannot show anything, on the Topic list. */
@@ -627,10 +869,8 @@ function cannotReach(fault) {
 }
 
 function clearRefusals() {
-  byId('f-src-err').hidden = true;
-  byId('f-src-help').hidden = false;
-  byId('f-src').removeAttribute('aria-invalid');
-  byId('f-src').removeAttribute('aria-describedby');
+  showAddRefusal('');
+  rowRefusal = null;
   byId('form-error').hidden = true;
 }
 
@@ -638,19 +878,20 @@ function clearRefusals() {
 async function save(event) {
   event.preventDefault();
   const view = viewFor(location.hash);
-  // One address on each line. A blank line is no Source, but the lines keep
-  // their numbers, so a refusal points at the line the operator sees.
-  const sources = [];
-  const lines = [];
-  byId('f-src')
-    .value.split('\n')
-    .forEach((line, at) => {
-      if (line.trim() === '') return;
-      sources.push(line.trim());
-      lines.push(at + 1);
-    });
-  const given = { name: byId('f-name').value, question: byId('f-q').value, sources: sources };
   clearRefusals();
+  // An address still in the box is one the operator means to keep, so it
+  // joins the list first. One the page refuses stops the save, with why.
+  const box = byId('f-src-add');
+  if (box.value.trim() !== '' && !addSources(box.value, '')) {
+    box.focus();
+    return;
+  }
+  drawSources(null);
+  const given = {
+    name: byId('f-name').value,
+    question: byId('f-q').value,
+    sources: draft.slice(),
+  };
   byId('form-submit').disabled = true;
   try {
     const answer =
@@ -659,26 +900,18 @@ async function save(event) {
         : await call('create_topic', given);
     location.hash = '#topic/' + answer.topic.id;
   } catch (fault) {
-    refused(fault, lines);
+    refused(fault);
   } finally {
     byId('form-submit').disabled = false;
   }
 }
 
-/** Show a refusal where it belongs: under the Sources when it names one. */
-function refused(fault, lines) {
+/** Show a refusal where it belongs: on the row of the Source it names. */
+function refused(fault) {
   const data = fault.data;
-  if (data && data.field === 'sources' && lines[data.index] !== undefined) {
-    byId('f-src-err-text').innerHTML =
-      'Line ' +
-      lines[data.index] +
-      ' is not an http or https address: <code>' +
-      esc(data.address) +
-      '</code>. Change it or remove it.';
-    byId('f-src-help').hidden = true;
-    byId('f-src-err').hidden = false;
-    byId('f-src').setAttribute('aria-invalid', 'true');
-    byId('f-src').setAttribute('aria-describedby', 'f-src-err');
+  if (data && data.field === 'sources' && draft[data.index] !== undefined) {
+    rowRefusal = { index: data.index, message: fault.message };
+    drawSources('[data-remove="' + data.index + '"]');
     return;
   }
   byId('form-error-text').textContent = fault.message;
@@ -859,6 +1092,17 @@ async function start() {
     closeExtract();
   });
   byId('form').addEventListener('submit', save);
+  byId('f-src-add-button').addEventListener('click', addTyped);
+  byId('f-src-add').addEventListener('keydown', (event) => {
+    // Enter adds the address. It never sends the form from here.
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    addTyped();
+  });
+  byId('f-src-add').addEventListener('paste', onSourcePaste);
+  byId('f-src-add').addEventListener('input', () => showAddRefusal(''));
+  byId('f-src-list').addEventListener('click', onSourceList);
+  byId('f-src-list').addEventListener('keydown', onSourceKey);
   byId('form-cancel').addEventListener('click', () => {
     const view = viewFor(location.hash);
     go(view.name === 'edit' ? '#topic/' + view.id : '#');

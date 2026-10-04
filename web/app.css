@@ -205,9 +205,9 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
   transition: border-color 200ms var(--ease), background-color 200ms var(--ease), box-shadow 200ms var(--ease), transform 120ms var(--ease);
 }
 @media (hover: hover) and (pointer: fine) { .x:hover { border-color: var(--faint); } }
-.x .n { font: 600 12px/20px var(--sans); color: var(--accent); background: var(--accent-soft); border-radius: 5px; text-align: center; height: 20px; }
-.x .host { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
-.x .path { grid-column: 2; font: 12px/1.35 var(--mono); color: var(--faint); overflow-wrap: anywhere; }
+.x .n, .src .n { font: 600 12px/20px var(--sans); color: var(--accent); background: var(--accent-soft); border-radius: 5px; text-align: center; height: 20px; }
+.x .host, .src .host { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.x .path, .src .path { grid-column: 2; font: 12px/1.35 var(--mono); color: var(--faint); overflow-wrap: anywhere; }
 .x .mark { grid-column: 2; display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); margin-top: 2px; }
 .x .mark svg.i { width: 13px; height: 13px; }
 .x[data-m="cut"] .mark, .x[data-m="thin"] .mark { color: var(--warn); }
@@ -248,19 +248,48 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 /* Topic form */
 .form { display: grid; gap: 20px; max-width: 62ch; margin-top: 22px; }
 .field { display: grid; gap: 6px; }
-.field label { font-weight: 600; font-size: 14px; }
-.field label .optional { font-weight: 400; color: var(--faint); }
+.field label, .field .label { font-weight: 600; font-size: 14px; }
+.field label .optional, .field .label .optional { font-weight: 400; color: var(--faint); }
 .field .help { font-size: 13px; color: var(--muted); }
-.input, .area {
+.input {
   width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--pane); color: var(--ink);
   font: 15px/1.45 var(--sans); transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
 }
-.area { min-height: 11em; font: 14px/1.6 var(--mono); resize: vertical; }
-.input:focus, .area:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
-.area[aria-invalid="true"] { border-color: var(--fail); }
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.input[aria-invalid="true"] { border-color: var(--fail); }
 .field-error { display: flex; gap: 6px; align-items: flex-start; color: var(--fail); font-size: 14px; }
 .field-error svg.i { margin-top: 2px; }
 .form .acts { padding-top: 4px; }
+
+/* The Sources of the form: a list in order, as the Extracts show an address,
+   and one box under it that adds to its end. */
+.srcs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.src {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 2px 8px; align-items: start;
+  padding: 7px 6px 7px 10px; border-radius: var(--radius); background: var(--pane); border: 1px solid var(--line);
+  transition: border-color 200ms var(--ease), background-color 200ms var(--ease);
+}
+.src .n { margin-top: 6px; }
+.src .host { grid-column: 2; grid-row: 1; padding-top: 6px; }
+.src .path { grid-row: 2; padding-bottom: 4px; }
+.src .path:empty { display: none; }
+.src-acts { grid-column: 3; grid-row: 1 / span 2; display: flex; gap: 2px; }
+.src-acts .btn { width: 32px; min-height: 32px; padding: 0; justify-content: center; }
+.src.bad { border-color: color-mix(in srgb, var(--fail) 45%, var(--line)); background: var(--fail-soft); }
+.src.bad .n { background: var(--fail); color: #fff; }
+.src.bad .host { color: var(--fail-ink); }
+.src-err { grid-column: 2 / -1; display: flex; gap: 6px; align-items: flex-start; padding-bottom: 4px; font-size: 13px; color: var(--fail); }
+.src-err svg.i { width: 14px; height: 14px; margin-top: 2px; }
+/* Motion is only feedback: a row that was added fades in, and a row that
+   moved shows where it went. */
+.src.fresh { animation: src-in 180ms var(--ease) both; }
+.src.moved { animation: src-moved 600ms var(--ease); }
+@keyframes src-in { from { opacity: 0; transform: translateY(-4px); } }
+@keyframes src-moved { from { border-color: var(--accent); background: var(--accent-soft); } }
+.src-none { margin: 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--radius); font-size: 13px; color: var(--faint); }
+.src-add { display: flex; gap: 8px; }
+.src-add .input { flex: 1; min-width: 0; }
+.input.addr { font: 14px/1.45 var(--mono); }
 
 /* Narrow: one column, the rail becomes a top bar, the side pane follows the Digest */
 @media (max-width: 1080px) { .app { grid-template-columns: 220px minmax(0, 1fr) 290px; } .main-in { padding-inline: 28px; } }
@@ -282,6 +311,7 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .btn:active, .cite:active, .x:active { transform: none; }
+  .src.fresh, .src.moved { animation: none; }
   .meter i { transition: none; }
   .meter.indeterminate i { width: 100%; opacity: .5; animation: none; }
 }

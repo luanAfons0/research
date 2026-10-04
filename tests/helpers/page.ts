@@ -25,7 +25,11 @@
  *   finds one with `querySelector` on a declared element, for a selector of
  *   one attribute, and a test reads which ones it scrolled into view;
  * - a wait of a second or more, such as the page's poll while a Sweep runs,
- *   passes only when a test says so with `later()`, so no test sleeps for it.
+ *   passes only when a test says so with `later()`, so no test sleeps for it;
+ * - a key or a paste goes to the element it is aimed at, then to the
+ *   document, as a browser bubbles it. Enter in an input that nothing
+ *   stopped sends the form, as a browser does, and a paste that nothing
+ *   stopped lands at the end of the value, as if the caret were there.
  */
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -33,7 +37,7 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import { createContext, runInContext } from 'node:vm';
-import { REPOSITORY, type Started } from './plugin.ts';
+import { CLEAN_UP_TIMEOUT_MS, REPOSITORY, type Started } from './plugin.ts';
 
 /** The Plugin Page's directory, as the Host serves it. */
 export const WEB = join(REPOSITORY, 'web');
@@ -55,26 +59,55 @@ export async function hostFor(t: TestContext, plugin: Started): Promise<string> 
       response.writeHead(404).end();
       return;
     }
-    let body = '';
-    for await (const chunk of request) body += String(chunk);
-    const asked = JSON.parse(body) as { id: unknown; method: string; params?: unknown };
-    const answer = await plugin.ask(asked.method, asked.params);
-    response.writeHead(200, { 'content-type': 'application/json' });
-    response.end(JSON.stringify({ jsonrpc: '2.0', id: asked.id, ...answer }));
+    // Every request is answered, whatever goes wrong: one left open would
+    // hold this server's close, and the test, until the page's fetch gave up.
+    try {
+      let body = '';
+      for await (const chunk of request) body += String(chunk);
+      const asked = JSON.parse(body) as { id: unknown; method: string; params?: unknown };
+      const answer = await plugin.ask(asked.method, asked.params);
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ jsonrpc: '2.0', ...answer, id: asked.id }));
+    } catch (fault) {
+      if (!response.headersSent) response.writeHead(502, { 'content-type': 'text/plain' });
+      response.end(`the stand-in Host could not reach the Plugin Server: ${String(fault)}`);
+    }
   });
   await new Promise<void>((listening) => server.listen(0, '127.0.0.1', listening));
-  t.after(() => new Promise<void>((closed) => server.close(() => closed())));
+  t.after(
+    () =>
+      new Promise<void>((closed) => {
+        server.closeAllConnections();
+        server.close(() => closed());
+      }),
+    { timeout: CLEAN_UP_TIMEOUT_MS },
+  );
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}/p/research/`;
 }
 
 /** What an event names as its target: an element, or an item drawn inside one. */
 type Target = PageElement | DrawnItem;
 
+/** The keys held down with another key. */
+export type Modifiers = {
+  readonly altKey?: boolean;
+  readonly shiftKey?: boolean;
+  readonly ctrlKey?: boolean;
+  readonly metaKey?: boolean;
+};
+
 /** One event as the page's listeners get it. */
 type PageEvent = {
   readonly type: string;
   readonly target: Target;
   readonly key?: string;
+  readonly altKey: boolean;
+  readonly shiftKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+  /** What a paste carries, as a browser's clipboardData gives it. */
+  readonly clipboardData?: { getData(format: string): string };
+  readonly defaultPrevented: boolean;
   preventDefault(): void;
 };
 
@@ -137,6 +170,20 @@ export type OpenPage = {
   /** Press a key with nothing in particular focused. */
   key(name: string): void;
   /**
+   * Press a key in element `id`, such as Enter in an input. Enter in an input
+   * sends the form unless the page stopped it.
+   */
+  press(id: string, key: string, modifiers?: Modifiers): void;
+  /**
+   * Press a key on the item drawn inside element `id` whose `attribute` is
+   * `value`, as a person does with that item focused.
+   */
+  pressKeyIn(id: string, attribute: string, value: string, key: string, modifiers?: Modifiers): void;
+  /** Type into element `id`: its value becomes this text, and it hears `input`. */
+  type(id: string, text: string): void;
+  /** Paste this text into element `id`, at the end of what it holds. */
+  paste(id: string, text: string): void;
+  /**
    * Press the item drawn inside element `id` whose `attribute` is `value`,
    * as a person presses a Sweep or an Extract. A disabled one takes no click.
    */
@@ -145,6 +192,11 @@ export type OpenPage = {
   later(): void;
   /** The element that has focus, or null. */
   focused(): PageElement | null;
+  /**
+   * The drawn item that has focus, as the element it is in and the selector
+   * it was found by: `#f-src-list [data-up="1"]`, or null.
+   */
+  focusedItem(): string | null;
   /**
    * Each drawn item the page scrolled into view, in order, as the element it
    * is in and the selector it was found by: `#extracts [data-x="2"]`.
@@ -156,11 +208,14 @@ export type OpenPage = {
   settled(): Promise<void>;
 };
 
-/** Every id `index.html` declares, with whether its tag starts `hidden`. */
-function declared(html: string): Map<string, boolean> {
-  const ids = new Map<string, boolean>();
-  for (const found of html.matchAll(/<[a-z][^>]*\sid="([^"]+)"[^>]*>/g)) {
-    ids.set(found[1] ?? '', /\shidden[\s>]/.test(found[0]));
+/** One element `index.html` declares: its tag, and whether it starts `hidden`. */
+type Declared = { readonly tag: string; readonly hidden: boolean };
+
+/** Every id `index.html` declares, with its tag and whether it starts `hidden`. */
+function declared(html: string): Map<string, Declared> {
+  const ids = new Map<string, Declared>();
+  for (const found of html.matchAll(/<([a-z][a-z0-9]*)[^>]*\sid="([^"]+)"[^>]*>/g)) {
+    ids.set(found[2] ?? '', { tag: found[1] ?? '', hidden: /\shidden[\s>]/.test(found[0]) });
   }
   return ids;
 }
@@ -181,21 +236,43 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
   let pendingHash = 0;
   let fragment = hash === '' || hash.startsWith('#') ? hash : `#${hash}`;
   let focused: PageElement | null = null;
+  let focusedItem: string | null = null;
   const scrolls: string[] = [];
 
   const fire = (listeners: Map<string, Listener[]>, event: PageEvent): void => {
     for (const listener of listeners.get(event.type) ?? []) listener(event);
   };
-  const eventFor = (type: string, target: PageElement, key?: string): PageEvent => ({
-    type,
-    target,
-    ...(key === undefined ? {} : { key }),
-    preventDefault: () => undefined,
-  });
+  const eventFor = (
+    type: string,
+    target: Target,
+    key?: string,
+    modifiers: Modifiers = {},
+    pasted?: string,
+  ): PageEvent => {
+    let prevented = false;
+    return {
+      type,
+      target,
+      ...(key === undefined ? {} : { key }),
+      altKey: modifiers.altKey === true,
+      shiftKey: modifiers.shiftKey === true,
+      ctrlKey: modifiers.ctrlKey === true,
+      metaKey: modifiers.metaKey === true,
+      ...(pasted === undefined ? {} : { clipboardData: { getData: () => pasted } }),
+      get defaultPrevented() {
+        return prevented;
+      },
+      preventDefault: () => {
+        prevented = true;
+      },
+    };
+  };
 
   const elements = new Map<string, PageElement>();
   const listenersOf = new Map<string, Map<string, Listener[]>>();
-  for (const [id, hidden] of declared(html)) {
+  const tags = new Map<string, string>();
+  for (const [id, { tag, hidden }] of declared(html)) {
+    tags.set(id, tag);
     const listeners = new Map<string, Listener[]>();
     listenersOf.set(id, listeners);
     const attributes = new Map<string, string>();
@@ -237,10 +314,18 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
         );
         return item === undefined
           ? null
-          : drawnItem(item, () => void scrolls.push(`#${id} ${selector}`));
+          : drawnItem(
+              item,
+              () => void scrolls.push(`#${id} ${selector}`),
+              () => {
+                focused = null;
+                focusedItem = `#${id} ${selector}`;
+              },
+            );
       },
       focus: () => {
         focused = element;
+        focusedItem = null;
       },
       click: () => {
         if (element.disabled) return;
@@ -339,6 +424,38 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
     },
     hash: () => fragment,
     key: (name) => fire(documentListeners, eventFor('keydown', elements.get('app')!, name)),
+    press: (id, key, modifiers) => {
+      const element = opened.byId(id);
+      const event = eventFor('keydown', element, key, modifiers);
+      fire(listenersOf.get(id)!, event);
+      fire(documentListeners, event);
+      // A browser sends the form on Enter in an input, unless the page stopped it.
+      if (key === 'Enter' && tags.get(id) === 'input' && !event.defaultPrevented) {
+        opened.byId('form').submit();
+      }
+    },
+    pressKeyIn: (id, attribute, value, key, modifiers) => {
+      const item = drawnIn(opened.byId(id).innerHTML).find(
+        (attributes) => attributes.get(attribute) === value,
+      );
+      if (item === undefined) throw new Error(`#${id} shows nothing with ${attribute}="${value}".`);
+      const event = eventFor('keydown', drawnItem(item), key, modifiers);
+      fire(listenersOf.get(id)!, event);
+      fire(documentListeners, event);
+    },
+    type: (id, text) => {
+      const element = opened.byId(id);
+      element.value = text;
+      fire(listenersOf.get(id)!, eventFor('input', element));
+    },
+    paste: (id, text) => {
+      const element = opened.byId(id);
+      const event = eventFor('paste', element, undefined, {}, text);
+      fire(listenersOf.get(id)!, event);
+      if (event.defaultPrevented) return;
+      element.value += text;
+      fire(listenersOf.get(id)!, eventFor('input', element));
+    },
     pressIn: (id, attribute, value) => {
       const item = drawnIn(opened.byId(id).innerHTML).find(
         (attributes) => attributes.get(attribute) === value,
@@ -346,11 +463,7 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
       if (item === undefined) throw new Error(`#${id} shows nothing with ${attribute}="${value}".`);
       // A browser sends no click to a disabled button.
       if (item.has('disabled')) return;
-      fire(listenersOf.get(id)!, {
-        type: 'click',
-        target: drawnItem(item, () => undefined),
-        preventDefault: () => undefined,
-      });
+      fire(listenersOf.get(id)!, eventFor('click', drawnItem(item)));
     },
     later: () => {
       const due = [...waits.values()];
@@ -358,6 +471,7 @@ export async function openPage(t: TestContext, plugin: Started, hash = ''): Prom
       for (const run of due) run();
     },
     focused: () => focused,
+    focusedItem: () => focusedItem,
     scrolled: () => scrolls,
     called: () => called,
     settled: async () => {
@@ -390,7 +504,11 @@ function drawnIn(markup: string): Map<string, string>[] {
  * takes a selector of one attribute, such as `[data-x]`, and matches the item
  * itself or nothing.
  */
-function drawnItem(attributes: Map<string, string>, onScroll: () => void): DrawnItem {
+function drawnItem(
+  attributes: Map<string, string>,
+  onScroll: () => void = () => undefined,
+  onFocus: () => void = () => undefined,
+): DrawnItem {
   const drawn: DrawnItem = {
     getAttribute: (name) => attributes.get(name) ?? null,
     hasAttribute: (name) => attributes.has(name),
@@ -399,7 +517,7 @@ function drawnItem(attributes: Map<string, string>, onScroll: () => void): Drawn
       if (wanted === null) throw new Error(`closest knows no selector ${selector}.`);
       return attributes.has(wanted[1] ?? '') ? drawn : null;
     },
-    focus: () => undefined,
+    focus: onFocus,
     scrollIntoView: onScroll,
   };
   return drawn;

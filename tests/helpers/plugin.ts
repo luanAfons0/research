@@ -48,6 +48,22 @@ export const HOST_ERROR = -32000;
 /** How long a test waits for one answer before it gives up. */
 const ANSWER_TIMEOUT_MS = 10_000;
 
+/**
+ * How long one clean-up after a test may take. `--test-timeout` does not
+ * reach an after hook, so each hook here carries its own limit, and a hook
+ * that hangs fails with the test's name instead of holding the suite.
+ */
+export const CLEAN_UP_TIMEOUT_MS = 15_000;
+
+/** How long a Plugin Server has to exit on SIGTERM before it is killed outright. */
+const KILL_AFTER_MS = 5_000;
+
+/**
+ * Each directory a test made, with how to stop every Plugin Server that runs
+ * in it. The directory is removed only once they have all stopped.
+ */
+const runningIn = new Map<string, Set<() => Promise<void>>>();
+
 /** One answer to one JSON-RPC request: exactly one of these two is there. */
 export type Answer = {
   readonly result?: unknown;
@@ -139,10 +155,29 @@ export type Started = {
   kill(): void;
 };
 
-/** A temporary Plugin directory for one test, removed when the test ends. */
+/**
+ * A temporary Plugin directory for one test, removed when the test ends,
+ * after every Plugin Server started in it has stopped.
+ *
+ * The order matters. A Plugin Server that still runs a Sweep writes to
+ * `research.db`, and SQLite makes and removes `research.db-journal` beside it
+ * on each write, so a removal that races it fails with ENOTEMPTY. node:test
+ * runs after hooks in the order they were added and skips every one after a
+ * hook that fails, so the Plugin Server would never be stopped, and the test
+ * file would wait on it for ever.
+ */
 export async function makeDirectory(t: TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'research-test-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  const stoppers = new Set<() => Promise<void>>();
+  runningIn.set(directory, stoppers);
+  t.after(
+    async () => {
+      for (const stop of stoppers) await stop();
+      runningIn.delete(directory);
+      await rm(directory, { recursive: true, force: true });
+    },
+    { timeout: CLEAN_UP_TIMEOUT_MS },
+  );
   return directory;
 }
 
@@ -253,14 +288,31 @@ export async function startPluginServer(
     for (const wake of watchers) wake();
   }
 
-  t.after(async () => {
-    child.stdin!.end();
-    child.kill('SIGTERM');
-    if (ending === null) await ended;
-  });
+  // Stopped once, whoever asks first: the directory's clean-up or this one.
+  let stopped: Promise<void> | null = null;
+  const stopForGood = (): Promise<void> => {
+    stopped ??= (async () => {
+      if (ending !== null) return;
+      child.stdin!.end();
+      child.kill('SIGTERM');
+      const killer = setTimeout(() => child.kill('SIGKILL'), KILL_AFTER_MS);
+      await ended;
+      clearTimeout(killer);
+    })();
+    return stopped;
+  };
+  runningIn.get(directory)?.add(stopForGood);
+  t.after(stopForGood, { timeout: CLEAN_UP_TIMEOUT_MS });
 
   function askFor(method: string, params?: unknown): Promise<Answer> {
     const id = `test-${(counter += 1)}`;
+    // Nobody can answer a Plugin Server that has stopped, so say so now
+    // rather than after the whole wait.
+    if (ending !== null || !child.stdin!.writable) {
+      return Promise.resolve({
+        error: { code: 0, message: `the Plugin Server had stopped before ${method} was sent` },
+      });
+    }
     return new Promise<Answer>((answered, fail) => {
       const timer = setTimeout(() => {
         owed.delete(id);

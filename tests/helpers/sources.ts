@@ -23,7 +23,7 @@ import { createServer, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, join } from 'node:path';
 import type { TestContext } from 'node:test';
-import { FIXTURES } from './plugin.ts';
+import { CLEAN_UP_TIMEOUT_MS, FIXTURES } from './plugin.ts';
 
 /** Where the fixture pages are. */
 export const PAGES = join(FIXTURES, 'sources');
@@ -119,6 +119,7 @@ export async function serveSources(t: TestContext): Promise<Sources> {
         server.closeAllConnections();
         server.close(() => closed());
       }),
+    { timeout: CLEAN_UP_TIMEOUT_MS },
   );
   const port = (server.address() as AddressInfo).port;
 

@@ -139,11 +139,20 @@
           <input class="input" id="f-q" placeholder="What do you want the Digest to answer?">
           <span class="help">The Digest is written in the language of the question. With no question, it is written in Brazilian Portuguese.</span>
         </div>
-        <div class="field">
-          <label for="f-src">Sources</label>
-          <textarea class="area" id="f-src" spellcheck="false" placeholder="One address on each line, starting with https://"></textarea>
+        <!-- The Sources, in order: the order gives each one the [n] of the
+             next Sweep. app.js draws the rows into f-src-list; each row
+             moves up or down, by its buttons or Alt+ArrowUp and
+             Alt+ArrowDown, and its trash button removes it. -->
+        <div class="field" role="group" aria-labelledby="f-src-label">
+          <span class="label" id="f-src-label">Sources <span class="optional" id="f-src-count"></span></span>
+          <ol class="srcs" id="f-src-list" aria-labelledby="f-src-label" hidden></ol>
+          <p class="src-none" id="f-src-none">No Sources yet. Add the pages to read, one at a time or many at once.</p>
+          <div class="src-add">
+            <input class="input addr" id="f-src-add" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…" aria-label="Add a Source" aria-describedby="f-src-help">
+            <button type="button" class="btn" id="f-src-add-button"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Add</button>
+          </div>
+          <span class="field-error" id="f-src-add-err" role="alert" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg><span id="f-src-add-err-text"></span></span>
           <span class="help" id="f-src-help">research reads each page once, and no page it links to.</span>
-          <span class="field-error" id="f-src-err" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg><span id="f-src-err-text"></span></span>
         </div>
         <span class="field-error" id="form-error" role="alert" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg><span id="form-error-text"></span></span>
         <div class="acts"><button type="submit" class="btn go" id="form-submit"></button><button type="button" class="btn" id="form-cancel">Cancel</button></div>

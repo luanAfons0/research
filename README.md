@@ -65,9 +65,13 @@ ignores it: it is your research, not the project's.
 ## Topics
 
 A **Topic** is one subject: a name, an optional question, and its own list of
-Sources. On the Plugin Page, press **New Topic**, and type the Sources one
-address on each line. An address that is not `http` or `https` is refused, and
-the page names its line. A Topic opens at `#topic/<id>`, so a reload or a link
+Sources. On the Plugin Page, press **New Topic**, and add the Sources in the
+box under the list: type one and press Enter or **Add**, or paste many at once,
+on lines or split by spaces or commas. An address that is not `http` or
+`https`, or is in the list already, is refused under the box and stays there to
+be fixed. The order of the list is the `[n]` each Source gets in the next
+Sweep: move a row with its arrow buttons, or with Alt+ArrowUp and
+Alt+ArrowDown, and remove it with its trash button. A Topic opens at `#topic/<id>`, so a reload or a link
 lands on the same Topic. Deleting a Topic asks for confirmation first, and its
 Sources and Sweeps go with it.
 
