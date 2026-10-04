@@ -135,6 +135,37 @@ written once to stderr, and that Notice is dropped. A Host whose handshake
 does not offer Notices (`capabilities.experimental.firstmate.notice`) gets
 none.
 
+## A Sweep on a Cadence
+
+research has no clock of its own. To keep a Topic fresh, let
+[`scheduler`](https://github.com/luanAfons0/scheduler) start its Sweeps. First
+give `scheduler` a Grant to call research's tools, and restart the Host:
+
+```sh
+firstmate grant scheduler research
+systemctl --user restart firstmate
+```
+
+Then add a Job that calls `sweep_topic` with the Topic's id. The id is the
+number in the Topic's address on the Plugin Page, `#topic/<id>`:
+
+```json
+{
+  "name": "research-node-24",
+  "enabled": true,
+  "when": { "every": "weekly", "day": "monday", "at": "08:00", "timezone": "America/Sao_Paulo" },
+  "plugin": "research",
+  "tool": "sweep_topic",
+  "arguments": { "id": 1 },
+  "missedRunGraceMinutes": 720
+}
+```
+
+`sweep_topic` answers at once, so the Run is `ok` as soon as the Sweep
+starts. The Sweep goes on without `scheduler`, and its Notice comes when it
+ends. A Run while a Sweep of that Topic still runs is `failed`, with
+research's sentence.
+
 ## The Digest
 
 When every Source of a Sweep is read, research makes the Digest with the
