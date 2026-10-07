@@ -14,7 +14,15 @@ import test from 'node:test';
 import { openPage } from './helpers/page.ts';
 import { makeDirectory, startedAndShaken } from './helpers/plugin.ts';
 import { serveSources } from './helpers/sources.ts';
-import { DIGEST_COMMAND, ended, sweepNamed, sweepOf, topicWith, until } from './helpers/sweeps.ts';
+import {
+  commandOf,
+  DIGEST_COMMAND,
+  ended,
+  sweepNamed,
+  sweepOf,
+  topicWith,
+  until,
+} from './helpers/sweeps.ts';
 
 const WITH_COMMAND = { env: { RESEARCH_DIGEST_COMMAND: DIGEST_COMMAND } };
 
@@ -232,7 +240,7 @@ test('when the Digest command failed, the band says what it said', async (t) => 
 test('a Digest command that is not found is named in the band', async (t) => {
   const sources = await serveSources(t);
   const plugin = await startedAndShaken(t, {
-    env: { RESEARCH_DIGEST_COMMAND: 'no-such-model-runner' },
+    env: { RESEARCH_DIGEST_COMMAND: commandOf('no-such-model-runner') },
   });
   const topic = await topicWith(plugin, [sources.address('/notes.txt')]);
   await ended(plugin, (await sweepOf(plugin, topic)).id);

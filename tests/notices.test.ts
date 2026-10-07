@@ -26,6 +26,7 @@ import {
 } from './helpers/plugin.ts';
 import { serveSources, type Sources } from './helpers/sources.ts';
 import {
+  commandOf,
   DIGEST_COMMAND,
   ended,
   sweepNamed,
@@ -154,7 +155,7 @@ test('a long Topic name and a long reason are shortened, so the Host never refus
   const sources = await serveSources(t);
   const program = `/opt/models/${'very-long-directory/'.repeat(12)}runner`;
   const plugin = await startedAndShaken(t, {
-    env: { RESEARCH_DIGEST_COMMAND: program, ...SHORT_GAP },
+    env: { RESEARCH_DIGEST_COMMAND: commandOf(program), ...SHORT_GAP },
     answerNotice: hostLengths,
   });
   const words = await topicWith(

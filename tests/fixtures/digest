@@ -5,14 +5,34 @@
 // wraps its answer in a code fence, as some models do, so a test can see
 // research remove both.
 //
-// Three variables bend it:
+// It runs as it is on Linux, and through `digest.cmd`, its Windows form, on
+// Windows, so the suite starts a `.cmd` file there as research would start an
+// npm-installed `claude.cmd`.
+//
+// Five variables bend it:
 // - RESEARCH_TEST_DIGEST_FAIL: it fails the way a command with no model does,
 //   with lines on stderr and a non-zero exit.
 // - RESEARCH_TEST_DIGEST_HOLD: it says a line on stderr, then waits until the
 //   file this names exists before it answers, so a test can see a Sweep
 //   `digesting`. It gives up after ten seconds, so it never outlives a test.
 // - RESEARCH_TEST_DIGEST_EMPTY: it prints nothing at all.
+// - RESEARCH_TEST_ARGS_LOG: it writes the arguments it was given there, as a
+//   JSON array, so a test can see they arrive unchanged.
+// - RESEARCH_TEST_DIGEST_CHILD: it starts a process of its own that lives for
+//   half a minute, and writes that process's id there, so a test can see that
+//   stopping the command stops what it started too.
+import { spawn } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
+
+if (process.env.RESEARCH_TEST_ARGS_LOG) {
+  writeFileSync(process.env.RESEARCH_TEST_ARGS_LOG, JSON.stringify(process.argv.slice(2)));
+}
+if (process.env.RESEARCH_TEST_DIGEST_CHILD) {
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30_000)'], {
+    stdio: 'ignore',
+  });
+  writeFileSync(process.env.RESEARCH_TEST_DIGEST_CHILD, String(child.pid));
+}
 
 let prompt = '';
 process.stdin.setEncoding('utf8');

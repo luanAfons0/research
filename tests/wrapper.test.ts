@@ -5,6 +5,9 @@
  * Node, which is too old to run TypeScript or to have node:sqlite. These tests
  * give the wrapper exactly that PATH and a home directory with no nvm in it,
  * so the only Node 24 it can find is the one a test puts in its way.
+ *
+ * The Host runs `mcp.ts` in a `local` Place, and `mcp` only in a `wsl` Place
+ * (FirstMate ADR-0028), so these tests are for Linux alone.
  */
 import { strict as assert } from 'node:assert';
 import { execFileSync } from 'node:child_process';
@@ -12,6 +15,9 @@ import { mkdir, symlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { FIXTURES, makeDirectory, startPluginServer } from './helpers/plugin.ts';
+
+/** `mcp` is `sh`, which Windows has no use for: the Host runs `mcp.ts` there. */
+const SKIP = process.platform === 'win32' ? 'the sh wrapper `mcp` is for a wsl Place' : false;
 
 /** The PATH a systemd user service gets: no nvm, no login shell. */
 const SERVICE_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
@@ -32,9 +38,10 @@ async function bareBin(t: TestContext): Promise<string> {
   return bin;
 }
 
-test('the wrapper runs the Node that RESEARCH_NODE names when PATH has none new enough', async (t) => {
+test('the wrapper runs the Node that RESEARCH_NODE names when PATH has none new enough', { skip: SKIP }, async (t) => {
   const home = await makeDirectory(t);
   const plugin = await startPluginServer(t, {
+    wrapper: true,
     env: { PATH: SERVICE_PATH, HOME: home, RESEARCH_NODE: process.execPath },
   });
 
@@ -43,9 +50,10 @@ test('the wrapper runs the Node that RESEARCH_NODE names when PATH has none new 
   assert.equal(answer.error, undefined, plugin.output());
 });
 
-test('the wrapper runs a Node 24 it finds on PATH', async (t) => {
+test('the wrapper runs a Node 24 it finds on PATH', { skip: SKIP }, async (t) => {
   const home = await makeDirectory(t);
   const plugin = await startPluginServer(t, {
+    wrapper: true,
     env: { PATH: `${dirname(process.execPath)}:${SERVICE_PATH}`, HOME: home, RESEARCH_NODE: '' },
   });
 
@@ -54,12 +62,13 @@ test('the wrapper runs a Node 24 it finds on PATH', async (t) => {
   assert.equal(answer.error, undefined, plugin.output());
 });
 
-test('the wrapper runs a Node 24 it finds under nvm when PATH has only an old one', async (t) => {
+test('the wrapper runs a Node 24 it finds under nvm when PATH has only an old one', { skip: SKIP }, async (t) => {
   const home = await makeDirectory(t);
   const bin = join(home, '.nvm', 'versions', 'node', 'v24.0.0', 'bin');
   await mkdir(bin, { recursive: true });
   await symlink(process.execPath, join(bin, 'node'));
   const plugin = await startPluginServer(t, {
+    wrapper: true,
     env: { PATH: await bareBin(t), HOME: home, RESEARCH_NODE: '' },
   });
 
@@ -68,9 +77,10 @@ test('the wrapper runs a Node 24 it finds under nvm when PATH has only an old on
   assert.equal(answer.error, undefined, plugin.output());
 });
 
-test('a RESEARCH_NODE older than 24 is passed over for a Node 24 on PATH', async (t) => {
+test('a RESEARCH_NODE older than 24 is passed over for a Node 24 on PATH', { skip: SKIP }, async (t) => {
   const home = await makeDirectory(t);
   const plugin = await startPluginServer(t, {
+    wrapper: true,
     env: { PATH: `${dirname(process.execPath)}:${SERVICE_PATH}`, HOME: home, RESEARCH_NODE: OLD_NODE },
   });
 
@@ -79,9 +89,10 @@ test('a RESEARCH_NODE older than 24 is passed over for a Node 24 on PATH', async
   assert.equal(answer.error, undefined, plugin.output());
 });
 
-test('with no Node 24 anywhere, the wrapper says so in one sentence that names RESEARCH_NODE', async (t) => {
+test('with no Node 24 anywhere, the wrapper says so in one sentence that names RESEARCH_NODE', { skip: SKIP }, async (t) => {
   const home = await makeDirectory(t);
   const plugin = await startPluginServer(t, {
+    wrapper: true,
     env: { PATH: await bareBin(t), HOME: home, RESEARCH_NODE: OLD_NODE },
   });
 

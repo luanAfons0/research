@@ -28,7 +28,8 @@ Run every command from the repository root.
 | `node --test tests/plugin-server.test.ts` | One test file, while you work on it.          |
 | `npm install && npx tsc --noEmit`         | Check the types. `npm run typecheck` is the same. |
 | `npm run check`                           | The types, then every test. CI runs it.       |
-| `./mcp`                                   | The Plugin Server, as the Host runs it.       |
+| `node mcp.ts`                             | The Plugin Server, as the Host runs it.       |
+| `./mcp`                                   | The same, as the Host runs it in a `wsl` Place. |
 
 The environment variables are in the README's Settings table. Tests set every
 one they need through `tests/helpers/plugin.ts`.
@@ -53,7 +54,10 @@ one they need through `tests/helpers/plugin.ts`.
 ## Project structure
 
 ```
-mcp            the executable the Host runs: find a Node 24, run src/main.ts.
+mcp.ts         the entry point the Host runs with its own Node (FirstMate
+               ADR-0028), on Windows and on Linux.
+mcp            the sh wrapper the Host runs in a wsl Place: find a Node 24,
+               run src/main.ts.
 src/           the Plugin Server. Every file is one job.
   main.ts      start-up: read the settings, open research.db, fail the Sweeps
                left running, serve the tools, send Notices once the handshake
@@ -65,6 +69,8 @@ src/           the Plugin Server. Every file is one job.
   reader.ts    one Source in, one Extract out: the fetch rules (ADR-0001).
   extractor.ts the readable text of an HTML page, with no parser to depend on.
   digest.ts    the prompt of a Sweep, and the Digest command that reads it (ADR-0002).
+  command.ts   a command as a program and its arguments: read its form, find it,
+               start it with no shell, end it with its whole tree (ADR-0003).
   notices.ts   the Notice a Sweep that ends sends, through a queue that keeps the gap.
   tools.ts     the tools this Plugin ships, for the Page and for other Plugins.
   mcp.ts       the one connection to the Host: MCP over stdio, both ways.
@@ -103,14 +109,21 @@ docs/agents/   how an agent works in this repo. See "Agent skills" below.
 
 `node --test`. No test imports a module of `src/`.
 
-- **The Plugin Server**: `tests/helpers/plugin.ts` spawns the real `mcp`
-  against a temporary Plugin directory and speaks to it exactly as the Host
-  does, with or without the Notice capability in the handshake. A test sees
+- **The Plugin Server**: `tests/helpers/plugin.ts` runs the real `mcp.ts`
+  with the running Node and no shell, in a temporary Plugin directory, and
+  speaks to it exactly as the Host does, with or without the Notice capability in the handshake. A test sees
   what the Host sees: JSON-RPC lines on stdout, diagnostics on stderr, the
   exit code, and the files in the directory.
 - **The Host's side of a Notice**: the same helper records each
   `firstmate/notice` with the time it came, and accepts it or refuses it as
   the test says (`answerNotice`, `tooSoon`).
+- **The `sh` wrapper**: `tests/wrapper.test.ts` starts `mcp` with the same
+  helper's `wrapper: true`, as the Host does in a `wsl` Place. It skips on
+  Windows and says why.
+- **Both systems**: CI runs the whole suite on `ubuntu-latest` and
+  `windows-latest`. The fixture Digest command, `tests/fixtures/digest`, has a
+  Windows form, `digest.cmd`, so a `.cmd` program is started on every Windows
+  run. A `.cmd` fixture keeps Windows line ends (`.gitattributes`).
 - **The outside world comes from fixtures** in `tests/fixtures/`, never from
   mocks. Add a fixture rather than a mock. The pages a Sweep reads are in
   `tests/fixtures/sources/`, served over real HTTP on 127.0.0.1 by

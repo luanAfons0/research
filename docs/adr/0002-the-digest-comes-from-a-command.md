@@ -6,6 +6,8 @@ Sweep — to the command's stdin, and reads the Digest from its stdout. research
 knows no model, holds no key and has no default command. This is the decision
 scribe made for its Minutes (scribe ADR-0002), for the same reasons.
 
+The command is a program and its arguments, started with no shell (ADR-0003).
+
 Any tool that reads a prompt and prints text will do: a local model through
 `ollama run`, or a cloud CLI such as `claude -p`.
 

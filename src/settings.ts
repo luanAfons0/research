@@ -8,11 +8,15 @@
  * between two Notices. The Digest
  * command has no default: research knows no model (ADR-0002).
  */
+import { type Command, readCommand } from './command.ts';
 
 /** How long one Source may take to answer, in milliseconds. */
 export const FETCH_TIMEOUT_VARIABLE = 'RESEARCH_FETCH_TIMEOUT_MS';
 
-/** The command that makes a Digest: a prompt on its stdin, the Digest on its stdout (ADR-0002). */
+/**
+ * The command that makes a Digest: a prompt on its stdin, the Digest on its
+ * stdout (ADR-0002). It is a JSON array: the program, then its arguments (ADR-0003).
+ */
 export const DIGEST_VARIABLE = 'RESEARCH_DIGEST_COMMAND';
 
 /** How long the Digest command may run, in milliseconds. */
@@ -37,8 +41,8 @@ const NOTICE_GAP_MS = 5_000;
 export type Settings = {
   /** How long one Source may take to answer, body and all, in milliseconds. */
   readonly fetchTimeoutMs: number;
-  /** The Digest command, run by `sh`, or null when none is set (ADR-0002). */
-  readonly digestCommand: string | null;
+  /** The Digest command, or null when none is set (ADR-0002, ADR-0003). */
+  readonly digestCommand: Command | null;
   /** How long the Digest command may run before it is stopped, in milliseconds. */
   readonly digestTimeoutMs: number;
   /** How long to wait after one Notice before the next, in milliseconds. */
@@ -53,7 +57,7 @@ export function readSettings(env: NodeJS.ProcessEnv = process.env): Settings {
       env[FETCH_TIMEOUT_VARIABLE],
       FETCH_TIMEOUT_MS,
     ),
-    digestCommand: nonEmpty(env[DIGEST_VARIABLE]),
+    digestCommand: readCommand(DIGEST_VARIABLE, env[DIGEST_VARIABLE]),
     digestTimeoutMs: milliseconds(
       DIGEST_TIMEOUT_VARIABLE,
       env[DIGEST_TIMEOUT_VARIABLE],
@@ -61,12 +65,6 @@ export function readSettings(env: NodeJS.ProcessEnv = process.env): Settings {
     ),
     noticeGapMs: milliseconds(NOTICE_GAP_VARIABLE, env[NOTICE_GAP_VARIABLE], NOTICE_GAP_MS),
   };
-}
-
-/** A variable's value, trimmed, or null when it is not set or is only blanks. */
-function nonEmpty(value: string | undefined): string | null {
-  const given = value?.trim() ?? '';
-  return given === '' ? null : given;
 }
 
 function milliseconds(variable: string, value: string | undefined, fallback: number): number {

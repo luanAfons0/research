@@ -22,6 +22,7 @@
  * A Sweep the last Plugin Server left running ends at the next start, and
  * sends its Notice then, so that no one waits for a Digest that will not come.
  */
+import type { Command } from './command.ts';
 import {
   checkCommand,
   COMMAND_FAILED,
@@ -54,7 +55,7 @@ export type Sweeping = {
   /** How the Digest is made (ADR-0002). */
   readonly digesting: {
     /** The command in RESEARCH_DIGEST_COMMAND, or null when none is set. */
-    readonly command: string | null;
+    readonly command: Command | null;
     /** How long it may run before it is stopped. */
     readonly timeoutMs: number;
   };
@@ -311,7 +312,7 @@ async function makeDigest(sweeping: Sweeping, id: number): Promise<void> {
   });
   let digest: string;
   try {
-    digest = await runCommand(checked.command, prompt.text, {
+    digest = await runCommand(checked.file, checked.args, prompt.text, {
       timeoutMs: digesting.timeoutMs,
       stopping: reading.stopping,
     });

@@ -1,0 +1,2 @@
+# A .cmd file is read by cmd.exe, which expects Windows line ends.
+*.cmd text eol=crlf

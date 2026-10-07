@@ -1,6 +1,7 @@
 /**
- * The one test seam for the Plugin Server: the real `mcp`, spawned against a
- * temporary Plugin directory, spoken to exactly as the Host speaks to it.
+ * The one test seam for the Plugin Server: the real `mcp.ts`, run by the
+ * running Node with no shell, as the Host runs it (FirstMate ADR-0028), against
+ * a temporary Plugin directory, spoken to exactly as the Host speaks to it.
  *
  * Nothing here imports a module of the Plugin. What a test may see is what the
  * Host may see: the JSON-RPC lines on stdout, the diagnostics on stderr, the
@@ -27,14 +28,17 @@ import type { TestContext } from 'node:test';
 
 const TESTS = dirname(dirname(fileURLToPath(import.meta.url)));
 
-/** The repository root, where `mcp`, `web/` and `.gitignore` are. */
+/** The repository root, where `mcp.ts`, `mcp`, `web/` and `.gitignore` are. */
 export const REPOSITORY = dirname(TESTS);
 
 /** Where the fixture executables and files live. */
 export const FIXTURES = join(TESTS, 'fixtures');
 
-/** The `mcp` executable the Host would run. Tests run the same file. */
-export const EXECUTABLE = join(REPOSITORY, 'mcp');
+/** The `mcp.ts` entry point the Host runs with its own Node, on every system. */
+export const ENTRY = join(REPOSITORY, 'mcp.ts');
+
+/** The `sh` wrapper `mcp`, which the Host runs only in a `wsl` Place. */
+export const WRAPPER = join(REPOSITORY, 'mcp');
 
 /** The protocol version the Host sends in its handshake. */
 export const PROTOCOL_VERSION = '2025-06-18';
@@ -120,6 +124,8 @@ export type StartOptions = {
   readonly notice?: boolean;
   /** How each Notice is answered. Without one, every Notice is accepted. */
   readonly answerNotice?: NoticeAnswer;
+  /** Start the `sh` wrapper `mcp` instead, as the Host does in a `wsl` Place. */
+  readonly wrapper?: boolean;
 };
 
 export type Ending = { readonly code: number | null; readonly signal: NodeJS.Signals | null };
@@ -191,7 +197,10 @@ export async function startPluginServer(
 ): Promise<Started> {
   const directory = options.directory ?? (await makeDirectory(t));
 
-  const child = spawn(EXECUTABLE, [], {
+  // The Host runs its own Node with `mcp.ts`, in the Plugin directory, with no
+  // shell (FirstMate ADR-0028). The running Node is the test's own Node 24.
+  const [program, args] = options.wrapper === true ? [WRAPPER, []] : [process.execPath, [ENTRY]];
+  const child = spawn(program, args, {
     cwd: directory,
     // A Digest command the person running the tests has set is not the
     // test's: a test that wants one gives it.
