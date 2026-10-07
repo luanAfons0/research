@@ -1,7 +1,8 @@
 /**
  * The Digest of a Sweep: a prompt made of the rules, the Topic and the
- * Extracts, given to the command in `RESEARCH_DIGEST_COMMAND` on stdin, and
- * the Digest read from its stdout (ADR-0002).
+ * Extracts, given to the Digest command on stdin, and the Digest read from
+ * its stdout (ADR-0002). The operator sets the command in Settings on the
+ * Plugin Page, and `RESEARCH_DIGEST_COMMAND` beats it.
  *
  * research knows no model. The command is a program and its arguments, such
  * as `["ollama","run","<model>"]`, started with no shell (ADR-0003), and
@@ -16,8 +17,8 @@
  * and does not remove it, which is why the README asks for a command with no
  * tools (ADR-0002).
  */
-import { COMMAND_FORM, findProgram, startCommand, type Command } from './command.ts';
-import { DIGEST_VARIABLE } from './settings.ts';
+import { COMMAND_FORM, findProgram, startCommand } from './command.ts';
+import { type Chosen, DIGEST_VARIABLE } from './settings.ts';
 
 /**
  * A model reads only so much text, so each Extract is cut to this many
@@ -107,37 +108,43 @@ export type CommandCheck =
   | { readonly reason: string; readonly refusal: string };
 
 /** Why a Sweep failed when there is no command to make its Digest with (ADR-0002). */
-export const NO_DIGEST_COMMAND = `no Digest command is set in ${DIGEST_VARIABLE}`;
+export const NO_DIGEST_COMMAND = 'no Digest command is set; set one in Settings';
 
 /** The start of the reason a Sweep failed with when its Digest command failed. */
 export const COMMAND_FAILED = 'the Digest command failed';
 
+/** Where the operator sets the Digest command: the Plugin Page's Settings view. */
+const SETTINGS = 'Settings';
+
 /**
  * The command, when it is set and its program can be found. A program
  * installed through nvm is on a person's PATH and not on the Host service's,
- * so the sentence says to give its absolute path.
+ * so the sentence says to give its absolute path, where the command was set.
  */
-export function checkCommand(command: Command | null, env = process.env): CommandCheck {
+export function checkCommand(chosen: Chosen, env = process.env): CommandCheck {
+  const { command } = chosen;
   if (command === null) {
     return {
       reason: NO_DIGEST_COMMAND,
       refusal:
-        `make_digest needs ${DIGEST_VARIABLE}: set it, where the Host is started, to a ` +
-        'command that reads a prompt on stdin and prints the Digest, as ' +
+        `make_digest needs a Digest command. Set one in ${SETTINGS} on research's Plugin ` +
+        'Page: a command that reads a prompt on stdin and prints the Digest, as ' +
         `${COMMAND_FORM}. The README says more.`,
     };
   }
   const file = findProgram(command.program, env);
   if (file !== null) return { file, args: command.args };
   const program = command.program;
+  const where = chosen.from === 'environment' ? DIGEST_VARIABLE : SETTINGS;
+  const named =
+    chosen.from === 'environment' ? DIGEST_VARIABLE : `The Digest command in ${SETTINGS}`;
   return {
     reason:
       `${COMMAND_FAILED}: "${program}" is not found on the PATH; give its absolute path in ` +
-      DIGEST_VARIABLE,
+      where,
     refusal:
-      `${DIGEST_VARIABLE} names "${program}", which is not found on the Host's PATH. Give ` +
-      'its absolute path: a command installed through nvm is not on the PATH of the Host ' +
-      'service.',
+      `${named} names "${program}", which is not found on the Host's PATH. Give its absolute ` +
+      'path: a command installed through nvm is not on the PATH of the Host service.',
   };
 }
 

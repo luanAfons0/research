@@ -59,10 +59,14 @@ mcp.ts         the entry point the Host runs with its own Node (FirstMate
 mcp            the sh wrapper the Host runs in a wsl Place: find a Node 24,
                run src/main.ts.
 src/           the Plugin Server. Every file is one job.
-  main.ts      start-up: read the settings, open research.db, fail the Sweeps
-               left running, serve the tools, send Notices once the handshake
-               offers them, close on stdin's end.
-  settings.ts  what research reads from its environment.
+  main.ts      start-up: read the settings and settings.json, open
+               research.db, fail the Sweeps left running, serve the tools,
+               send Notices once the handshake offers them, close on stdin's
+               end.
+  settings.ts  what research reads from its environment, and the Digest
+               command: the environment beats the settings file, which beats none.
+  settings-file.ts settings.json in the Plugin directory: what the operator set
+               on the Plugin Page, written whole through a rename.
   store.ts     research.db: open it, move it up to the current schema version.
   topics.ts    make, change, list and delete Topics and their Sources.
   sweeps.ts    start a Sweep, read its Sources in the background, record each state.
@@ -75,7 +79,7 @@ src/           the Plugin Server. Every file is one job.
   tools.ts     the tools this Plugin ships, for the Page and for other Plugins.
   mcp.ts       the one connection to the Host: MCP over stdio, both ways.
 web/           the Plugin Page, as the Host serves it.
-  index.html   the three panes, drawn by app.js.
+  index.html   the three panes and the Settings, drawn by app.js.
   rpc.js       request(), listTools() and call(): the Plugin Server, over POST rpc.
   app.js       what the page shows, from what the tools answer.
   markdown.js  the small Markdown renderer for the Digest, as Worklog's.
@@ -86,7 +90,8 @@ docs/agents/   how an agent works in this repo. See "Agent skills" below.
 .impeccable/   the design context and the approved mock of the Plugin Page.
 ```
 
-`research.db` is this machine's research, not the project's. Git ignores it.
+`research.db` is this machine's research, and `settings.json` its operator's
+choices, not the project's. Git ignores both.
 
 ## Code style
 

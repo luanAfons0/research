@@ -4,7 +4,8 @@
 
    The address fragment chooses the view, so a reload, a link or a click on a
    Notice lands on the same place: "#" is the Topic list, "#new" a new Topic,
-   "#topic/<id>" one Topic, and "#topic/<id>/edit" its form. While a Sweep
+   "#topic/<id>" one Topic, "#topic/<id>/edit" its form, and "#settings" the
+   Settings, where the operator sets the Digest command. While a Sweep
    runs, the page asks again every few seconds, so the band, the Extracts, the
    rail and the Topic list show where it is.
 
@@ -60,20 +61,25 @@ const EXTRACT_MARKS = {
   waiting: { m: 'wait', icon: 'dot', opens: false },
 };
 
+/** Where the Settings are, as a link in a sentence. */
+const SETTINGS_LINK = '<a href="#settings">Settings</a>';
+
+/** What the failed band says when no Digest command is set. */
+const NO_COMMAND = {
+  what: 'Sweep failed: no Digest command is set',
+  why: (kept) => 'Set one in ' + SETTINGS_LINK + ', then make the Digest again. ' + kept,
+  again: true,
+};
+
 /**
  * What the failed band says for each reason a Sweep fails with: the line in
  * bold, the sentence under it, and whether it offers to make the Digest
  * again. A reason not listed here is shown as it is.
  */
 const FAILURES = {
-  'no Digest command is set in RESEARCH_DIGEST_COMMAND': {
-    what: 'Sweep failed: no Digest command is set',
-    why: (kept) =>
-      'Set <code>RESEARCH_DIGEST_COMMAND</code> where the Host starts, ' +
-      'then make the Digest again. ' +
-      kept,
-    again: true,
-  },
+  'no Digest command is set; set one in Settings': NO_COMMAND,
+  // The reason a Sweep kept before the Digest command moved to Settings.
+  'no Digest command is set in RESEARCH_DIGEST_COMMAND': NO_COMMAND,
   'no Source could be read': {
     what: 'Sweep failed: no Source could be read',
     why: () => 'Each Extract on the right says why. Check the addresses, then Sweep again.',
@@ -114,6 +120,7 @@ function icon(name) {
 function viewFor(hash) {
   const path = hash.replace(/^#/, '');
   if (path === 'new') return { name: 'new' };
+  if (path === 'settings') return { name: 'settings' };
   const found = /^topic\/(\d+)(\/edit)?$/.exec(path);
   if (found) return { name: found[2] ? 'edit' : 'topic', id: Number(found[1]) };
   return { name: 'index' };
@@ -213,6 +220,15 @@ async function show(quiet) {
   let topic = null;
   let missing = null;
   let sweep = null;
+  let settings = null;
+  if (view.name === 'settings') {
+    try {
+      settings = (await call('get_settings')).settings;
+    } catch (fault) {
+      if (turn === drawing) cannotReach(fault);
+      return;
+    }
+  }
   if (view.id !== undefined) {
     try {
       topic = (await call('get_topic', { id: view.id })).topic;
@@ -228,6 +244,7 @@ async function show(quiet) {
   shown = topic;
   shownSweep = sweep;
   draw(view, topics, topic, missing, sweep, quiet);
+  if (settings !== null && !quiet) drawSettings(settings);
   askAgainWhileRunning(topics, sweep);
 }
 
@@ -244,8 +261,9 @@ function draw(view, topics, topic, missing, sweep, quiet) {
   const onTopic = view.name === 'topic' || (view.name === 'edit' && missing);
   const onForm = view.name === 'new' || (view.name === 'edit' && !missing);
   byId('trouble').hidden = true;
-  byId('app').classList.toggle('index', view.name === 'index');
+  byId('app').classList.toggle('index', view.name === 'index' || view.name === 'settings');
   byId('index').hidden = view.name !== 'index';
+  byId('settings-view').hidden = view.name !== 'settings';
   byId('topic-view').hidden = !onTopic;
   byId('form-view').hidden = !onForm;
   if (!quiet) {
@@ -410,7 +428,10 @@ function failureOf(reason, kept) {
 function commandSaid(detail) {
   const at = detail.indexOf(IT_SAID);
   const why = at < 0 ? detail : detail.slice(0, at);
-  const sentence = esc(capital(why)).replace(/RESEARCH_DIGEST_COMMAND/g, '<code>$&</code>') + '.';
+  const sentence =
+    esc(capital(why))
+      .replace(/RESEARCH_DIGEST_COMMAND/g, '<code>$&</code>')
+      .replace(/\bSettings\b/g, SETTINGS_LINK) + '.';
   if (at < 0) return sentence;
   return sentence + ' It said: <code>' + esc(detail.slice(at + IT_SAID.length)) + '</code>';
 }
@@ -862,6 +883,7 @@ function cannotReach(fault) {
   byId('index').hidden = false;
   byId('topic-view').hidden = true;
   byId('form-view').hidden = true;
+  byId('settings-view').hidden = true;
   byId('topic-list').hidden = true;
   byId('no-topics').hidden = true;
   byId('trouble-why').textContent = fault.message;
@@ -916,6 +938,73 @@ function refused(fault) {
   }
   byId('form-error-text').textContent = fault.message;
   byId('form-error').hidden = false;
+}
+
+/**
+ * The Settings as get_settings tells them: the Digest command the file
+ * holds, in the field, and whether the environment decides it instead.
+ */
+function drawSettings(settings) {
+  const digest = settings.digestCommand;
+  byId('s-digest').value = digest.saved === null ? '' : JSON.stringify(digest.saved);
+  byId('s-digest-none').hidden = digest.value !== null;
+  byId('s-digest-env').hidden = digest.from !== 'environment';
+  byId('s-digest-env-why').innerHTML =
+    digest.from === 'environment'
+      ? 'The Host was started with <code>' +
+        esc(digest.variable) +
+        '</code>, so research runs <code>' +
+        esc(JSON.stringify(digest.value)) +
+        '</code>, whatever is saved here. To use what is saved here, take the variable ' +
+        'out where the Host is started.'
+      : '';
+  byId('s-saved').hidden = true;
+  showSettingsRefusal('');
+}
+
+/** Say under the Digest command why the Plugin Server refused it, or say nothing. */
+function showSettingsRefusal(sentence) {
+  const field = byId('s-digest');
+  byId('s-digest-err-text').textContent = sentence;
+  byId('s-digest-err').hidden = sentence === '';
+  if (sentence === '') {
+    field.removeAttribute('aria-invalid');
+    field.setAttribute('aria-describedby', 's-digest-help');
+  } else {
+    field.setAttribute('aria-invalid', 'true');
+    field.setAttribute('aria-describedby', 's-digest-err s-digest-help');
+  }
+}
+
+/**
+ * Save the Digest command the field holds. The text is read as JSON when it
+ * is JSON, and sent as it is when it is not, so the Plugin Server, which
+ * checks every value, says what is wrong with it. An empty field is none.
+ */
+async function saveSettings(event) {
+  event.preventDefault();
+  showSettingsRefusal('');
+  byId('s-saved').hidden = true;
+  const text = byId('s-digest').value.trim();
+  let given = null;
+  if (text !== '') {
+    try {
+      given = JSON.parse(text);
+    } catch {
+      given = text;
+    }
+  }
+  byId('settings-save').disabled = true;
+  try {
+    const answer = await call('update_settings', { digestCommand: given });
+    drawSettings(answer.settings);
+    byId('s-saved').hidden = false;
+  } catch (fault) {
+    showSettingsRefusal(fault.message);
+    byId('s-digest').focus();
+  } finally {
+    byId('settings-save').disabled = false;
+  }
 }
 
 /** Ask, in the page, before a Topic is deleted. */
@@ -1077,6 +1166,14 @@ async function start() {
   for (const id of ['new-topic', 'new-topic-empty', 'new-topic-rail']) {
     byId(id).addEventListener('click', () => go('#new'));
   }
+  for (const id of ['settings-link', 'settings-rail']) {
+    byId(id).addEventListener('click', () => go('#settings'));
+  }
+  byId('settings-form').addEventListener('submit', saveSettings);
+  byId('s-digest').addEventListener('input', () => {
+    showSettingsRefusal('');
+    byId('s-saved').hidden = true;
+  });
   byId('sweep-now').addEventListener('click', sweepNow);
   byId('edit').addEventListener('click', () => shown && go('#topic/' + shown.id + '/edit'));
   byId('delete').addEventListener('click', askToDelete);

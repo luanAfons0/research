@@ -134,7 +134,7 @@ test('a Sweep that ends failed sends Sweep failed, with its Topic and the reason
 
   assert.deepEqual(shown(notice), {
     title: 'Sweep failed',
-    body: 'Release notes — no Digest command is set in RESEARCH_DIGEST_COMMAND.',
+    body: 'Release notes — no Digest command is set; set one in Settings.',
     path: `#topic/${topic}`,
   });
 });

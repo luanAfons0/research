@@ -261,6 +261,14 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .field-error svg.i { margin-top: 2px; }
 .form .acts { padding-top: 4px; }
 
+/* Settings: the Topic form's fields, on the Topic list's page. */
+.rail-foot { margin-top: auto; justify-content: flex-start; }
+.index-head .acts { align-items: center; }
+#settings-view h1 { font: 600 24px/1.2 var(--display); margin: 0 0 18px; }
+.form .note { margin: 0; }
+.saved { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
+.saved svg.i { color: var(--accent); }
+
 /* The Sources of the form: a list in order, as the Extracts show an address,
    and one box under it that adds to its end. */
 .srcs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

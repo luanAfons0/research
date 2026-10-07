@@ -60,7 +60,7 @@ test('sweep_topic answers at once with the new Sweep, and the reading goes on af
   assert.equal((await ended(plugin, sweep.id)).extracts[0]?.state, 'read');
 });
 
-test('with no Digest command, a Sweep ends failed, names RESEARCH_DIGEST_COMMAND, and keeps every Extract', async (t) => {
+test('with no Digest command, a Sweep ends failed, says where to set one, and keeps every Extract', async (t) => {
   const sources = await serveSources(t);
   const plugin = await startedAndShaken(t);
 
@@ -70,8 +70,7 @@ test('with no Digest command, a Sweep ends failed, names RESEARCH_DIGEST_COMMAND
   ]);
 
   assert.equal(sweep.state, 'failed');
-  assert.match(sweep.reason ?? '', /RESEARCH_DIGEST_COMMAND/);
-  assert.equal(sweep.reason, 'no Digest command is set in RESEARCH_DIGEST_COMMAND');
+  assert.equal(sweep.reason, 'no Digest command is set; set one in Settings');
   assert.equal(sweep.digest, null);
   assert.ok(!Number.isNaN(Date.parse(sweep.endedAt ?? '')), String(sweep.endedAt));
   assert.deepEqual(

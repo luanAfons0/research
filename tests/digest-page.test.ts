@@ -212,7 +212,7 @@ test('Make the Digest again says why, when it is refused', async (t) => {
   assert.equal(page.byId('sweep-trouble-what').textContent, 'The Digest was not made');
   assert.match(
     page.byId('sweep-trouble-why').textContent,
-    /^make_digest needs RESEARCH_DIGEST_COMMAND/,
+    /^make_digest needs a Digest command\. Set one in Settings/,
   );
   assert.equal(page.byId('digest-again').disabled, false);
 });

@@ -44,3 +44,12 @@ change the command or the question. The new Digest replaces the old one.
 
 A command installed through nvm is not on the Host's service PATH, so it needs
 its absolute path.
+
+## Amended
+
+The operator now sets the Digest command in Settings on the Plugin Page, and
+research keeps it in `settings.json` in its own directory, beside
+`research.db` (FirstMate ADR-0005), so it works however the Host was started.
+`RESEARCH_DIGEST_COMMAND` still beats the file, and the file beats the
+default, which is still no command. A Sweep with no command now says to set
+one in Settings.

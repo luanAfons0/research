@@ -22,7 +22,6 @@
  * A Sweep the last Plugin Server left running ends at the next start, and
  * sends its Notice then, so that no one waits for a Digest that will not come.
  */
-import type { Command } from './command.ts';
 import {
   checkCommand,
   COMMAND_FAILED,
@@ -35,6 +34,7 @@ import {
 import { badInput, sentenceFor } from './mcp.ts';
 import { noticeFor, type EndedSweep, type Notices } from './notices.ts';
 import { readSource, type ReadOptions } from './reader.ts';
+import type { DigestCommandSetting } from './settings.ts';
 import { now, within, type Store } from './store.ts';
 
 /** At most this many Sources of one Sweep are read at the same time. */
@@ -54,8 +54,8 @@ export type Sweeping = {
   readonly reading: ReadOptions;
   /** How the Digest is made (ADR-0002). */
   readonly digesting: {
-    /** The command in RESEARCH_DIGEST_COMMAND, or null when none is set. */
-    readonly command: Command | null;
+    /** The Digest command, from the environment or the settings file, read at each Digest. */
+    readonly command: DigestCommandSetting;
     /** How long it may run before it is stopped. */
     readonly timeoutMs: number;
   };
@@ -291,7 +291,7 @@ function withText(store: Store, id: number): PromptExtract[] {
  */
 async function makeDigest(sweeping: Sweeping, id: number): Promise<void> {
   const { store, digesting, reading } = sweeping;
-  const checked = checkCommand(digesting.command);
+  const checked = checkCommand(digesting.command.current());
   if ('reason' in checked) {
     end(store, id, 'failed', checked.reason);
     return;
@@ -362,7 +362,7 @@ export function remakeDigest(sweeping: Sweeping, id: number): SweepSummary {
           'Sweep the Topic again.',
       );
     }
-    const checked = checkCommand(sweeping.digesting.command);
+    const checked = checkCommand(sweeping.digesting.command.current());
     if ('refusal' in checked) throw badInput(checked.refusal);
     store
       .prepare("UPDATE sweeps SET state = 'digesting', reason = NULL, ended_at = NULL WHERE id = ?")

@@ -372,7 +372,7 @@ test('make_digest makes the Digest of a failed Sweep, once a command is set', as
   const sources = await serveSources(t);
   const first = await startedAndShaken(t);
   const failed = await sweptWhole(first, [sources.address('/notes.txt')]);
-  assert.equal(failed.reason, 'no Digest command is set in RESEARCH_DIGEST_COMMAND');
+  assert.equal(failed.reason, 'no Digest command is set; set one in Settings');
   first.stop();
   await first.ended();
   const second = await startedAndShaken(t, {
@@ -475,7 +475,7 @@ test('make_digest is refused with a sentence for no command, no text, an unknown
 
   assert.equal(
     noCommand.error?.message,
-    'make_digest needs RESEARCH_DIGEST_COMMAND: set it, where the Host is started, to a ' +
+    "make_digest needs a Digest command. Set one in Settings on research's Plugin Page: a " +
       'command that reads a prompt on stdin and prints the Digest, as a JSON array of ' +
       'strings, the program first and then each of its arguments, such as ' +
       '["ollama","run","<model>"]. The README says more.',

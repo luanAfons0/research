@@ -1,14 +1,20 @@
 /**
- * What research reads from its environment.
+ * What research reads from its environment, and the Digest command, which
+ * the environment or the settings file decides.
  *
  * The Host starts the Plugin Server with the environment it was started with,
- * so these are set where the Host is started: the systemd unit, or the shell.
- * Each time has a default that is right for a person, and a test sets a short
- * one so that it does not wait for a slow page for half a minute, or 5 seconds
- * between two Notices. The Digest
- * command has no default: research knows no model (ADR-0002).
+ * so a variable is set where the Host is started: the systemd unit, or the
+ * shell. Each time has a default that is right for a person, and a test sets a
+ * short one so that it does not wait for a slow page for half a minute, or 5
+ * seconds between two Notices. The times stay in the environment alone.
+ *
+ * The Digest command is the operator's choice, so it is set from the Plugin
+ * Page and kept in the settings file, which works however the Host was
+ * started. `RESEARCH_DIGEST_COMMAND` still beats the file, and the file beats
+ * the default, which is no command: research knows no model (ADR-0002).
  */
 import { type Command, readCommand } from './command.ts';
+import { readSettingsFile, writeSettingsFile } from './settings-file.ts';
 
 /** How long one Source may take to answer, in milliseconds. */
 export const FETCH_TIMEOUT_VARIABLE = 'RESEARCH_FETCH_TIMEOUT_MS';
@@ -41,7 +47,7 @@ const NOTICE_GAP_MS = 5_000;
 export type Settings = {
   /** How long one Source may take to answer, body and all, in milliseconds. */
   readonly fetchTimeoutMs: number;
-  /** The Digest command, or null when none is set (ADR-0002, ADR-0003). */
+  /** The Digest command in the environment, or null when none is set (ADR-0002, ADR-0003). */
   readonly digestCommand: Command | null;
   /** How long the Digest command may run before it is stopped, in milliseconds. */
   readonly digestTimeoutMs: number;
@@ -75,4 +81,70 @@ function milliseconds(variable: string, value: string | undefined, fallback: num
     throw new Error(`${variable} is ${given}; set it to a whole number of milliseconds.`);
   }
   return read;
+}
+
+/** Who decides the Digest command: the environment, the settings file, or neither. */
+export type DecidedBy = 'environment' | 'file' | 'default';
+
+/** The Digest command the next Digest is made with, and who decided it. */
+export type Chosen = { readonly command: Command | null; readonly from: DecidedBy };
+
+/** The Digest command, as the settings tools tell it. */
+export type DigestCommandView = {
+  /** The program and its arguments the next Digest runs, or null for none. */
+  readonly value: readonly string[] | null;
+  /** Who decided it. */
+  readonly from: DecidedBy;
+  /** What the settings file holds, whether or not the environment beats it. */
+  readonly saved: readonly string[] | null;
+  /** The variable that beats the file. */
+  readonly variable: string;
+};
+
+/** The Digest command of one running Plugin Server: read it, tell it, change it. */
+export type DigestCommandSetting = {
+  /** What the next Digest runs, decided now. */
+  current(): Chosen;
+  /** The setting as the tools tell it. */
+  view(): DigestCommandView;
+  /** Save a command in the settings file, or null for none, and use it from now on. */
+  save(command: Command | null): void;
+};
+
+/**
+ * The Digest command, from the environment's value and the settings file in
+ * the Plugin directory. The file is read once, here, so a file that is wrong
+ * stops the Plugin Server with a sentence before anything starts.
+ */
+export function openDigestCommand(
+  fromEnvironment: Command | null,
+  directory = '.',
+): DigestCommandSetting {
+  let saved = readSettingsFile(directory).digestCommand;
+  const current = (): Chosen =>
+    fromEnvironment !== null
+      ? { command: fromEnvironment, from: 'environment' }
+      : saved !== null
+        ? { command: saved, from: 'file' }
+        : { command: null, from: 'default' };
+  return {
+    current,
+    view: () => {
+      const chosen = current();
+      return {
+        value: arrayOf(chosen.command),
+        from: chosen.from,
+        saved: arrayOf(saved),
+        variable: DIGEST_VARIABLE,
+      };
+    },
+    save: (command) => {
+      writeSettingsFile({ digestCommand: command }, directory);
+      saved = command;
+    },
+  };
+}
+
+function arrayOf(command: Command | null): readonly string[] | null {
+  return command === null ? null : [command.program, ...command.args];
 }
