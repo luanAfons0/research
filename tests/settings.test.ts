@@ -10,14 +10,13 @@
 import { strict as assert } from 'node:assert';
 import { execFile } from 'node:child_process';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { promisify } from 'node:util';
 import {
   makeDirectory,
   REPOSITORY,
   startedAndShaken,
-  startPluginServer,
   structureOf,
   type Answer,
   type Started,
@@ -36,6 +35,8 @@ type DigestSetting = {
   from: 'environment' | 'file' | 'default';
   saved: string[] | null;
   variable: string;
+  problem: string | null;
+  ignored: string | null;
 };
 
 /** The Digest command, as the settings tools answer it. */
@@ -73,6 +74,8 @@ test('with nothing set, get_settings says there is no Digest command, by default
     from: 'default',
     saved: null,
     variable: 'RESEARCH_DIGEST_COMMAND',
+    problem: null,
+    ignored: null,
   });
   assert.deepEqual(await readdir(plugin.directory), ['research.db']);
 });
@@ -93,6 +96,8 @@ test('a Digest command set through update_settings is kept in the Plugin directo
     from: 'file',
     saved: command,
     variable: 'RESEARCH_DIGEST_COMMAND',
+    problem: null,
+    ignored: null,
   });
   assert.deepEqual(read, answered);
   assert.deepEqual(JSON.parse(await readFile(join(first.directory, FILE), 'utf8')), {
@@ -123,6 +128,8 @@ test('RESEARCH_DIGEST_COMMAND beats the file, and the settings tools say the env
     from: 'environment',
     saved,
     variable: 'RESEARCH_DIGEST_COMMAND',
+    problem: null,
+    ignored: null,
   });
   assert.deepEqual(changed, { ...read, saved: ['another-runner'] });
   assert.equal(sweep.state, 'done', String(sweep.reason));
@@ -175,6 +182,7 @@ test('null takes the Digest command out, and the next Sweep says no Digest comma
   assert.deepEqual(JSON.parse(await readFile(join(plugin.directory, FILE), 'utf8')), {});
   assert.equal(sweep.state, 'failed');
   assert.equal(sweep.reason, 'no Digest command is set; set one in Settings');
+  assert.equal(sweep.failure, 'no-digest-command');
 });
 
 test('a key of the settings file that research does not know is kept', async (t) => {
@@ -211,26 +219,58 @@ test('a program the settings file names that is not on the PATH fails the Sweep,
   );
 });
 
-for (const [what, text, said] of [
-  ['that is not JSON', 'digestCommand = ollama', 'is not a JSON object'],
+for (const [what, text, said, after] of [
+  [
+    'that is not JSON',
+    'digestCommand = ollama',
+    'is not a JSON object; save the Digest command in Settings to write it again.',
+    {},
+  ],
   [
     'whose Digest command is not a list',
-    '{"digestCommand":"ollama run x"}',
-    'holds the Digest command "ollama run x"',
+    '{"digestCommand":"ollama run x","later":1}',
+    'holds the Digest command "ollama run x"; set it to a JSON array of strings, the ' +
+      'program first and then each of its arguments, such as ["ollama","run","<model>"], ' +
+      'in Settings.',
+    { later: 1 },
   ],
 ] as const) {
-  test(`a settings file ${what} stops the Plugin Server with a sentence that names it`, async (t) => {
+  test(`a settings file ${what} keeps the Plugin Server up, refuses Digests with a sentence that names it, and a save replaces it`, async (t) => {
+    const sources = await serveSources(t);
     const directory = await makeDirectory(t);
-    await writeFile(join(directory, FILE), text);
-    const plugin = await startPluginServer(t, { directory });
+    const path = join(directory, FILE);
+    await writeFile(path, text);
+    const plugin = await startedAndShaken(t, { directory });
+    const problem = `${resolve(path)} ${said}`;
 
-    const ending = await plugin.ended();
+    const read = digestOf(await plugin.call('get_settings'));
+    const sweep = await sweptWhole(plugin, [sources.address('/notes.txt')]);
+    const again = await plugin.call('make_digest', { id: sweep.id });
+    const saved = digestOf(
+      await plugin.call('update_settings', { digestCommand: [DIGEST_PROGRAM] }),
+    );
+    const remade = await plugin.call('make_digest', { id: sweep.id });
 
-    assert.notEqual(ending.code, 0);
-    assert.ok(plugin.output().startsWith('research: '), plugin.output());
-    assert.ok(plugin.output().includes(FILE), plugin.output());
-    assert.ok(plugin.output().includes(said), plugin.output());
-    assert.equal(plugin.output().trim().split('\n').length, 1, plugin.output());
+    assert.deepEqual(read, {
+      value: null,
+      from: 'file',
+      saved: null,
+      variable: 'RESEARCH_DIGEST_COMMAND',
+      problem,
+      ignored: null,
+    });
+    assert.equal(sweep.state, 'failed');
+    assert.equal(sweep.reason, `the Digest command failed: ${problem.slice(0, -1)}`);
+    assert.equal(again.error?.message, problem);
+    assert.equal(again.error?.code, -32602);
+    assert.equal(saved.problem, null);
+    assert.deepEqual(saved.value, [DIGEST_PROGRAM]);
+    assert.deepEqual(JSON.parse(await readFile(path, 'utf8')), {
+      ...after,
+      digestCommand: [DIGEST_PROGRAM],
+    });
+    assert.equal(remade.error, undefined);
+    assert.equal(plugin.output(), '');
   });
 }
 

@@ -115,7 +115,7 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .band svg.i { margin-top: 2px; }
 .band .what { font-weight: 600; }
 .band .why { grid-column: 2; color: var(--muted); font-size: 14px; }
-.band .why code, .why code, .field-error code { font: 13px var(--mono); }
+.band .why code, .why code, .field-error code, .note code { font: 13px var(--mono); }
 .band .band-acts { grid-row: 1 / span 2; grid-column: 3; display: flex; gap: 8px; align-self: center; }
 .band.run { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--accent-soft); }
 .band.run svg.i { color: var(--accent); }

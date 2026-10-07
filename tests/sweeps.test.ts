@@ -92,6 +92,7 @@ test('when no Source could be read, the Sweep ends failed with that reason', asy
 
   assert.equal(sweep.state, 'failed');
   assert.equal(sweep.reason, 'no Source could be read');
+  assert.equal(sweep.failure, 'no-source-read');
   assert.equal(sweep.extracts.length, 2);
   assert.equal(sweep.readCount, 0);
 });
@@ -318,6 +319,7 @@ test('a Sweep still reading when the Plugin Server starts again becomes failed, 
   const after = await sweepNamed(second, sweep.id);
   assert.equal(after.state, 'failed');
   assert.equal(after.reason, 'the Plugin Server stopped before the Sweep ended');
+  assert.equal(after.failure, 'plugin-server-stopped');
   assert.ok(after.endedAt !== null);
   assert.deepEqual(
     after.extracts.map((extract) => extract.state),

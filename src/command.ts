@@ -35,22 +35,25 @@ export const COMMAND_FORM =
   '["ollama","run","<model>"]';
 
 /**
- * A command from what a setting holds: a JSON array of strings, the program
- * first. Undefined, or text that is blank, is no command. Anything else
- * throws a sentence that names the setting, the value and the form.
+ * The Digest command as the settings file holds it: the command, or none, or
+ * the sentence that says why the value is not one. A value that is wrong does
+ * not stop the Plugin Server: the Plugin Page is where the operator fixes it,
+ * so research stays up and refuses each Digest with this sentence.
  */
-export function readCommand(setting: string, value: string | undefined): Command | null {
-  const given = value?.trim() ?? '';
-  if (given === '') return null;
-  let parsed: unknown;
+export type CommandSetting = {
+  /** The command, or null when the setting holds none or holds a wrong value. */
+  readonly command: Command | null;
+  /** Why the value is not a command, as one sentence, or null when it is fine. */
+  readonly problem: string | null;
+};
+
+/** A command from text that holds a JSON array of strings, or null when it does not. */
+export function parseCommand(text: string): Command | null {
   try {
-    parsed = JSON.parse(given);
+    return commandFrom(JSON.parse(text));
   } catch {
-    parsed = undefined;
+    return null;
   }
-  const command = commandFrom(parsed);
-  if (command === null) throw new Error(`${setting} is ${given}; set it to ${COMMAND_FORM}.`);
-  return command;
 }
 
 /** A command from a JSON value, or null when it is not an array of strings with a program. */
@@ -59,6 +62,11 @@ export function commandFrom(value: unknown): Command | null {
   const [program, ...args] = value as string[];
   if (program === undefined || program.trim() === '') return null;
   return { program, args };
+}
+
+/** A command as the JSON array it is written as: the program, then each argument. */
+export function arrayOf(command: Command): readonly string[] {
+  return [command.program, ...command.args];
 }
 
 const WINDOWS = process.platform === 'win32';
@@ -114,26 +122,27 @@ export type Started = {
 };
 
 /**
- * Start a command from the file `findProgram` found, with no shell, and with
- * its three pipes.
+ * Start a command whose program is the file `findProgram` found, with no
+ * shell, and with its three pipes.
  *
  * On Linux it leads a process group of its own, so that ending it ends what it
  * started too, and nothing it started holds the pipes open after it. On
  * Windows a `.cmd` or `.bat` file goes through `cmd.exe`, and `taskkill /T`
  * ends the tree.
  */
-export function startCommand(file: string, args: readonly string[]): Started {
-  const child = WINDOWS && BATCH.test(file) ? startBatch(file, args) : startProgram(file, args);
+export function startCommand(command: Command): Started {
+  const child =
+    WINDOWS && BATCH.test(command.program) ? startBatch(command) : startProgram(command);
   return { child, end: () => endTree(child) };
 }
 
-function startProgram(file: string, args: readonly string[]): ChildProcessWithoutNullStreams {
-  return spawn(file, args, { stdio: 'pipe', windowsHide: true, detached: !WINDOWS });
+function startProgram({ program, args }: Command): ChildProcessWithoutNullStreams {
+  return spawn(program, args, { stdio: 'pipe', windowsHide: true, detached: !WINDOWS });
 }
 
 /** A `.cmd` or `.bat` file, through `cmd.exe`, with nothing in a word for it to read. */
-function startBatch(file: string, args: readonly string[]): ChildProcessWithoutNullStreams {
-  const line = [forCmd(file, 1), ...args.map((arg) => forCmd(arg, 2))].join(' ');
+function startBatch({ program, args }: Command): ChildProcessWithoutNullStreams {
+  const line = [forCmd(program, 1), ...args.map((arg) => forCmd(arg, 2))].join(' ');
   return spawn(process.env['ComSpec'] ?? 'cmd.exe', ['/d', '/s', '/c', `"${line}"`], {
     stdio: 'pipe',
     windowsHide: true,
@@ -163,27 +172,57 @@ function forCmd(word: string, reads: 1 | 2): string {
 
 /**
  * End a command and every process it started: its process group on Linux, its
- * tree on Windows. When the tool that ends a group or a tree cannot be run, the
- * command alone is killed, which is still better than leaving it.
+ * tree on Windows. A group or a tree that cannot be ended is said on stderr,
+ * and the command alone is killed, which is still better than leaving it.
  */
 function endTree(child: ChildProcessWithoutNullStreams): void {
   // The command may have ended while what it started still runs, so the group
   // or the tree is ended whatever the command's own state.
   if (child.pid === undefined) return;
-  const ended = WINDOWS
-    ? spawnSync(taskkill(), ['/pid', String(child.pid), '/T', '/F'], {
-        stdio: 'ignore',
-        windowsHide: true,
-      })
-    : // The system's own tool ends the group, as `taskkill` ends the tree on
-      // Windows, so no call here takes an id that only POSIX knows. `kill`
-      // reads a process group as the id with a minus sign, after `--`.
-      spawnSync('kill', ['-KILL', '--', `-${child.pid}`], { stdio: 'ignore' });
-  if (ended.error !== undefined || ended.status !== 0) child.kill('SIGKILL');
+  const failed = WINDOWS ? endWindowsTree(child.pid) : endGroup(child.pid);
+  if (failed === null) return;
+  process.stderr.write(
+    `research: the processes the Digest command started could not all be ended: ${failed}\n`,
+  );
+  child.kill('SIGKILL');
 }
 
-/** `taskkill.exe` from the Windows directory, so that a short PATH does not hide it. */
+/**
+ * End the process group the command leads on Linux. A negative id names the
+ * group; Windows has no groups, so this runs on Linux alone. Null when it was
+ * ended, or a sentence that says why not.
+ */
+function endGroup(pid: number): string | null {
+  try {
+    process.kill(-pid, 'SIGKILL');
+    return null;
+  } catch (fault) {
+    // ESRCH alone means every process of the group has ended already. Any
+    // other fault is said.
+    if ((fault as NodeJS.ErrnoException).code === 'ESRCH') return null;
+    return `the group ${pid} could not be killed (${(fault as Error).message}).`;
+  }
+}
+
+/**
+ * End the tree of the command on Windows with `taskkill /T /F`. Null when it
+ * was ended, or a sentence when `taskkill.exe` could not start or exited with
+ * anything but 0.
+ */
+function endWindowsTree(pid: number): string | null {
+  const ended = spawnSync(taskkill(), ['/pid', String(pid), '/T', '/F'], {
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  if (ended.error !== undefined) return `${taskkill()} could not start (${ended.error.message}).`;
+  if (ended.status === 0) return null;
+  return `${taskkill()} exited with ${ended.status ?? 'a signal'}.`;
+}
+
+/**
+ * `taskkill.exe` by its absolute path in the Windows directory, so that a short
+ * PATH, or a program of the same name earlier on it, does not stand in for it.
+ */
 function taskkill(): string {
-  const windows = process.env['SystemRoot'];
-  return windows === undefined ? 'taskkill.exe' : join(windows, 'System32', 'taskkill.exe');
+  return join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'taskkill.exe');
 }

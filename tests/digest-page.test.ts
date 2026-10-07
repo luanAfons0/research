@@ -231,7 +231,7 @@ test('when the Digest command failed, the band says what it said', async (t) => 
   assert.equal(
     page.byId('failed-why').innerHTML,
     'It exited with 3. It said: <code>pulling manifest / loading the model / ' +
-      'Error: model &quot;nada&quot; not found</code>',
+      'Error: model &quot;nada&quot; not found</code> <a href="#settings">Open Settings</a>',
   );
   assert.equal(page.byId('failed-acts').hidden, false);
   assert.equal(page.byId('no-digest').hidden, false);
@@ -251,7 +251,7 @@ test('a Digest command that is not found is named in the band', async (t) => {
   assert.equal(
     page.byId('failed-why').innerHTML,
     '&quot;no-such-model-runner&quot; is not found on the PATH; give its absolute path in ' +
-      '<code>RESEARCH_DIGEST_COMMAND</code>.',
+      '<code>RESEARCH_DIGEST_COMMAND</code>. <a href="#settings">Open Settings</a>',
   );
 });
 

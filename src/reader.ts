@@ -144,7 +144,11 @@ function why(fault: unknown, timeout: AbortSignal, timeoutMs: number): string {
   if (timeout.aborted) return `no answer in ${duration(timeoutMs)}`;
   const cause = (fault as { cause?: unknown } | null)?.cause;
   const message =
-    cause instanceof Error ? cause.message : fault instanceof Error ? fault.message : String(fault);
+    cause instanceof Error
+      ? cause.message
+      : fault instanceof Error
+        ? fault.message
+        : String(fault);
   return `network error: ${message}`;
 }
 

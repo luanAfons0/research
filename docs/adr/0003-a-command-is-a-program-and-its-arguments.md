@@ -45,16 +45,26 @@ the file starts still gets each argument unchanged.
 
 A command that runs past `RESEARCH_DIGEST_TIMEOUT_MS`, or that is still
 running when the Plugin Server stops, is ended with every process it started:
-its process group on Linux, through `kill`, and its tree on Windows, through
-`taskkill /T /F`. Neither system then keeps a model running for a Sweep that
+its process group on Linux, through `process.kill` with the group's negative
+id, and its tree on Windows, through `taskkill /T /F` by its absolute path. A
+group or a tree that cannot be ended is said on stderr. Neither system then keeps a model running for a Sweep that
 has ended.
 
 There is no `cd`, `&&` or redirection any more. A command that needs them is
 a script of the operator's own, named as the program.
 
 A value in the old form, such as `ollama run llama3.2`, is not a JSON array.
-The Plugin Server is Stopped with one sentence that names the variable and
-shows the form, rather than run something the operator did not mean.
+research runs nothing the operator did not mean, and it does not stop the
+Plugin Server either: the Plugin Page, where the operator fixes the Digest
+command, needs it. Such a value is ignored, so the settings file decides, and
+then the default. Settings shows one sentence that says the variable was
+ignored and to remove it from where the Host is started. A 1.x operator who
+upgrades sets the command in Settings and needs nothing else, and removes the
+old line from the systemd drop-in when convenient.
+
+A settings file research cannot use does not stop the Plugin Server either.
+Each Digest is refused with a sentence that names the file, Settings shows it,
+and the next save from the Plugin Page writes the file again.
 
 In JSON a backslash is written twice, so a Windows path is
 `"C:\\Users\\you\\AppData\\Roaming\\npm\\claude.cmd"`.

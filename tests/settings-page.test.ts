@@ -8,9 +8,17 @@
  * see, and asks the Plugin Server what it kept.
  */
 import { strict as assert } from 'node:assert';
+import { writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { openPage } from './helpers/page.ts';
-import { type Started, startedAndShaken, structureOf } from './helpers/plugin.ts';
+import {
+  makeDirectory,
+  type Started,
+  startedAndShaken,
+  structureOf,
+} from './helpers/plugin.ts';
 import { serveSources } from './helpers/sources.ts';
 import { DIGEST_COMMAND, DIGEST_PROGRAM, ended, sweepOf, topicWith } from './helpers/sweeps.ts';
 
@@ -131,11 +139,86 @@ test('with RESEARCH_DIGEST_COMMAND set, Settings says the environment decides, a
   assert.equal(page.byId('s-digest-none').hidden, true);
 });
 
+test('with RESEARCH_DIGEST_COMMAND in the old shell-line form, Settings says it is ignored and to remove it, and the command saved here decides', async (t) => {
+  const plugin = await startedAndShaken(t, {
+    env: { RESEARCH_DIGEST_COMMAND: 'ollama run llama3.2' },
+  });
+
+  const page = await openPage(t, plugin, '#settings');
+
+  assert.equal(page.byId('s-digest-env').hidden, true);
+  assert.equal(page.byId('s-digest-ignored').hidden, false);
+  assert.equal(
+    page.byId('s-digest-ignored-text').textContent,
+    'RESEARCH_DIGEST_COMMAND is ollama run llama3.2, which is not a JSON array of strings, ' +
+      'the program first and then each of its arguments, such as ["ollama","run","<model>"], ' +
+      'so research ignores it. Remove it from where the Host is started, such as the ' +
+      'systemd drop-in of research 1.x, and set the Digest command in Settings.',
+  );
+  assert.equal(page.byId('s-digest-none').hidden, false);
+
+  page.type('s-digest', JSON.stringify([DIGEST_PROGRAM]));
+  page.byId('settings-form').submit();
+  await page.settled();
+
+  assert.deepEqual(await digestCommand(plugin), [DIGEST_PROGRAM]);
+  assert.equal(page.byId('s-digest-none').hidden, true);
+  assert.equal(page.byId('s-digest-ignored').hidden, false);
+});
+
+test('with a settings file that is not a JSON object, Settings shows why, and a save writes it again', async (t) => {
+  const directory = await makeDirectory(t);
+  const path = join(directory, 'settings.json');
+  await writeFile(path, 'digestCommand = ollama');
+  const plugin = await startedAndShaken(t, { directory });
+  const page = await openPage(t, plugin, '#settings');
+  assert.equal(page.byId('s-digest-problem').hidden, false);
+  assert.equal(
+    page.byId('s-digest-problem-text').textContent,
+    `${resolve(path)} is not a JSON object; save the Digest command in Settings to write it ` +
+      'again.',
+  );
+  assert.equal(page.byId('s-digest-env').hidden, true);
+  assert.equal(page.byId('s-digest-none').hidden, true);
+
+  page.type('s-digest', JSON.stringify([DIGEST_PROGRAM]));
+  page.byId('settings-form').submit();
+  await page.settled();
+
+  assert.equal(page.byId('s-digest-problem').hidden, true);
+  assert.equal(page.byId('s-saved').hidden, false);
+  assert.deepEqual(await digestCommand(plugin), [DIGEST_PROGRAM]);
+});
+
 test('a Sweep with no Digest command says to set one in Settings, with a link there', async (t) => {
   const sources = await serveSources(t);
   const plugin = await startedAndShaken(t);
   const topic = await topicWith(plugin, [sources.address('/notes.txt')]);
   await ended(plugin, (await sweepOf(plugin, topic)).id);
+
+  const page = await openPage(t, plugin, `#topic/${topic}`);
+
+  assert.equal(page.byId('failed-what').textContent, 'Sweep failed: no Digest command is set');
+  assert.equal(
+    page.byId('failed-why').innerHTML,
+    'Set one in <a href="#settings">Settings</a>, then make the Digest again. ' +
+      'The 1 Extract this Sweep read is kept.',
+  );
+});
+
+test('a Sweep kept with the reason research gave before Settings still says to set one in Settings', async (t) => {
+  const sources = await serveSources(t);
+  const first = await startedAndShaken(t);
+  const topic = await topicWith(first, [sources.address('/notes.txt')]);
+  const sweep = await ended(first, (await sweepOf(first, topic)).id);
+  first.stop();
+  await first.ended();
+  const file = new DatabaseSync(join(first.directory, 'research.db'));
+  file
+    .prepare('UPDATE sweeps SET reason = ? WHERE id = ?')
+    .run('no Digest command is set in RESEARCH_DIGEST_COMMAND', sweep.id);
+  file.close();
+  const plugin = await startedAndShaken(t, { directory: first.directory });
 
   const page = await openPage(t, plugin, `#topic/${topic}`);
 
@@ -159,6 +242,6 @@ test('a program in Settings that is not found says to fix it in Settings, with a
   assert.equal(
     page.byId('failed-why').innerHTML,
     '&quot;no-such-model-runner&quot; is not found on the PATH; give its absolute path in ' +
-      '<a href="#settings">Settings</a>.',
+      'Settings. <a href="#settings">Open Settings</a>',
   );
 });

@@ -179,6 +179,8 @@
           <span class="field-error" id="s-digest-err" role="alert" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg><span id="s-digest-err-text"></span></span>
           <span class="help" id="s-digest-help">The program, then each of its arguments, as a JSON array. research writes a prompt to its stdin and reads the Digest from its stdout. In JSON a backslash is written twice. Leave it empty for none.</span>
         </div>
+        <p class="note warn" id="s-digest-ignored" role="status" hidden><strong>research ignores <code>RESEARCH_DIGEST_COMMAND</code>.</strong> <span id="s-digest-ignored-text"></span></p>
+        <p class="note fail" id="s-digest-problem" role="alert" hidden><strong>research cannot use this Digest command.</strong> <span id="s-digest-problem-text"></span></p>
         <p class="note warn" id="s-digest-none" hidden><strong>No Digest command is set.</strong> A Sweep keeps the text of each Source, and makes no Digest until you set one here.</p>
         <div class="acts"><button type="submit" class="btn go" id="settings-save">Save</button><span class="saved" id="s-saved" role="status" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg>Saved</span></div>
       </form>

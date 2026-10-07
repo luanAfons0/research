@@ -34,6 +34,15 @@ Topic list or at the foot of the rail (`#settings`). research keeps it in
 however the Host was started: the App on Windows or Linux, a shell, or
 systemd. See [The Digest](#the-digest).
 
+A `settings.json` that research cannot use, such as one that is not JSON,
+does not stop the Plugin Server. Settings shows a sentence that names the
+file, each Digest is refused with it, and **Save** writes the file again.
+
+Coming from research 1.x? Remove the `RESEARCH_DIGEST_COMMAND` line from the
+Host's systemd drop-in, and set the command in Settings instead. Until you do,
+research ignores that line, because it is not in the new form, and Settings
+says so.
+
 The Plugin Server reads these from its environment, which is the Host's:
 
 | Variable                     | What it is                                                         |
@@ -109,14 +118,17 @@ How a Source is read (ADR-0001):
   text is kept and marked: it may make its text with JavaScript, which research
   does not run.
 
-A Sweep is `reading`, then `digesting`, then `done`, or `failed` with a reason:
+A Sweep is `reading`, then `digesting`, then `done`, or `failed` with a
+reason, a sentence for a person, and its `failure`, a code that does not
+change when the sentence does:
 
-- `no Source could be read`;
-- `no Digest command is set; set one in Settings`;
-- `the Digest command failed: …`, with what went wrong and the last lines the
-  command wrote on stderr;
-- `the Plugin Server stopped before the Sweep ended`: if the Plugin Server
-  stops during a Sweep, the next start marks it so.
+- `no-source-read`: `no Source could be read`;
+- `no-digest-command`: `no Digest command is set; set one in Settings`;
+- `digest-command-failed`: `the Digest command failed: …`, with what went
+  wrong and the last lines the command wrote on stderr, or why the Digest
+  command cannot be used;
+- `plugin-server-stopped`: `the Plugin Server stopped before the Sweep ended`:
+  if the Plugin Server stops during a Sweep, the next start marks it so.
 
 A Sweep that fails keeps every Extract it read. Only one Sweep of a Topic runs
 at a time; Sweeps of different Topics run at the same time. A Sweep reads the
@@ -246,8 +258,11 @@ it in the same form, where the Host is started, such as a systemd drop-in:
 Environment='RESEARCH_DIGEST_COMMAND=["/usr/local/bin/ollama","run","<model>"]'
 ```
 
-A value of the variable that is not such an array stops the Plugin Server with
-a sentence that shows the form.
+A value of the variable that is not such an array, such as the shell line of
+research 1.x, does not stop the Plugin Server, and it does not decide:
+research ignores it, so what Settings holds decides. Settings shows one
+sentence that says the variable is ignored, and to remove it from where the
+Host is started.
 
 > **Use a Digest command that has no tools.** Every Extract goes to that
 > command, and an Extract is text a stranger wrote. A page can write to the
@@ -276,16 +291,16 @@ id. Each refusal is a JSON-RPC error with a sentence.
 | Tool           | Arguments                              | What it answers                                         |
 | -------------- | -------------------------------------- | ------------------------------------------------------- |
 | `list_topics`  | none                                   | `topics`: each Topic with `sourceCount`, `lastSweepAt` and `lastSweepState` (null until it is swept). |
-| `get_topic`    | `id`                                   | `topic`: its name, question, `sources` in order, and `sweeps` from new to old, each with `id`, `startedAt`, `endedAt`, `state`, `reason`, `sourceCount` and `readCount`. |
+| `get_topic`    | `id`                                   | `topic`: its name, question, `sources` in order, and `sweeps` from new to old, each with `id`, `startedAt`, `endedAt`, `state`, `reason`, `failure` (the reason's code, or null), `sourceCount` and `readCount`. |
 | `create_topic` | `name`, `question` (optional), `sources` (optional list of addresses) | `topic`, as `get_topic` gives it. |
 | `update_topic` | `id`, and any of `name`, `question`, `sources` | `topic`. What is not given is kept; `sources` replaces the whole list. |
 | `delete_topic` | `id`                                   | `deleted`: the id and name of the Topic. Its Sources and Sweeps go with it. |
 | `sweep_topic`  | `id` (a Topic)                         | `sweep`, at once, as `get_topic` lists it. The reading goes on after the answer. Refused while a Sweep of that Topic runs, and for a Topic with no Sources. |
-| `get_sweep`    | `id` (a Sweep), or `topic` alone        | `sweep`: its state, `reason`, `digest` (Markdown, or null), `digestAt` (when it was made, or null), and `extracts`, each with `n`, `address`, `state` (`waiting`, `reading`, `read`, `thin` or `failed`), `text`, `characters`, `note`, `reason`, `contentType`, `readAt`, `cut` (whether the Digest's prompt cut it) and `cutAt` (how many characters it took, or null). With `topic` alone, its latest Sweep, or null. |
-| `make_digest`  | `id` (a Sweep)                         | `sweep`, at once, `digesting`, as `get_topic` lists it. The Digest is made again from the stored Extracts, with no new fetch, and replaces the old one. Refused while a Sweep of that Topic runs, for a Sweep with no Extract that has text, and with no Digest command or one that is not found. |
+| `get_sweep`    | `id` (a Sweep), or `topic` alone        | `sweep`: its state, `reason`, `failure`, `digest` (Markdown, or null), `digestAt` (when it was made, or null), and `extracts`, each with `n`, `address`, `state` (`waiting`, `reading`, `read`, `thin` or `failed`), `text`, `characters`, `note`, `reason`, `contentType`, `readAt`, `cut` (whether the Digest's prompt cut it) and `cutAt` (how many characters it took, or null). With `topic` alone, its latest Sweep, or null. |
+| `make_digest`  | `id` (a Sweep)                         | `sweep`, at once, `digesting`, as `get_topic` lists it. The Digest is made again from the stored Extracts, with no new fetch, and replaces the old one. Refused while a Sweep of that Topic runs, for a Sweep with no Extract that has text, and with no Digest command, one that is not found, or one that cannot be used. |
 | `delete_sweep` | `id` (a Sweep)                         | `deleted`: the id of the Sweep and of its Topic. Refused while that Sweep runs. |
-| `get_settings` | none                                   | `settings.digestCommand`: `value`, the program and arguments the next Digest runs (null for none); `from`, who decides it (`environment` when `RESEARCH_DIGEST_COMMAND` is set, `file` when `settings.json` holds it, `default` for none); `saved`, what `settings.json` holds; and `variable`, the name of the variable. |
-| `update_settings` | `digestCommand` (a list of strings, or null for none; optional) | `settings`, as `get_settings` gives it. What is not given is kept. A bad value is refused with one sentence, and the file is left as it was. |
+| `get_settings` | none                                   | `settings.digestCommand`: `value`, the program and arguments the next Digest runs (null for none); `from`, who decides it (`environment` when `RESEARCH_DIGEST_COMMAND` is set, `file` when `settings.json` holds it, `default` for none); `saved`, what `settings.json` holds; `variable`, the name of the variable; `problem`, the sentence that says why what decides cannot be used, or null; and `ignored`, the sentence that says why `RESEARCH_DIGEST_COMMAND` is ignored, or null. |
+| `update_settings` | `digestCommand` (a list of strings, or null for none; optional) | `settings`, as `get_settings` gives it. What is not given is kept. A bad value is refused with one sentence, and the file is left as it was. A `settings.json` that is not a JSON object is written over. |
 
 An address that is not `http:` or `https:` is refused with a sentence that
 names it, and nothing is saved. That refusal also carries

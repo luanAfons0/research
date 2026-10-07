@@ -64,36 +64,35 @@ const EXTRACT_MARKS = {
 /** Where the Settings are, as a link in a sentence. */
 const SETTINGS_LINK = '<a href="#settings">Settings</a>';
 
-/** What the failed band says when no Digest command is set. */
-const NO_COMMAND = {
-  what: 'Sweep failed: no Digest command is set',
-  why: (kept) => 'Set one in ' + SETTINGS_LINK + ', then make the Digest again. ' + kept,
-  again: true,
-};
-
 /**
- * What the failed band says for each reason a Sweep fails with: the line in
+ * What the failed band says for each code a Sweep's failure has: the line in
  * bold, the sentence under it, and whether it offers to make the Digest
- * again. A reason not listed here is shown as it is.
+ * again. The Plugin Server gives the code beside the reason, so the page
+ * never reads a reason's words. A reason with no code is shown as it is.
  */
 const FAILURES = {
-  'no Digest command is set; set one in Settings': NO_COMMAND,
-  // The reason a Sweep kept before the Digest command moved to Settings.
-  'no Digest command is set in RESEARCH_DIGEST_COMMAND': NO_COMMAND,
-  'no Source could be read': {
-    what: 'Sweep failed: no Source could be read',
+  'no-digest-command': {
+    what: () => 'Sweep failed: no Digest command is set',
+    why: (reason, kept) =>
+      'Set one in ' + SETTINGS_LINK + ', then make the Digest again. ' + kept,
+    again: true,
+  },
+  'digest-command-failed': {
+    what: () => 'Sweep failed: the Digest command failed',
+    why: (reason) => commandSaid(reason.slice(reason.indexOf(': ') + 2)),
+    again: true,
+  },
+  'no-source-read': {
+    what: () => 'Sweep failed: no Source could be read',
     why: () => 'Each Extract on the right says why. Check the addresses, then Sweep again.',
     again: false,
   },
-  'the Plugin Server stopped before the Sweep ended': {
-    what: 'Sweep failed: the Plugin Server stopped before the Sweep ended',
-    why: (kept) => ('Sweep again to read every Source. ' + kept).trim(),
+  'plugin-server-stopped': {
+    what: (reason) => 'Sweep failed: ' + reason,
+    why: (reason, kept) => ('Sweep again to read every Source. ' + kept).trim(),
     again: false,
   },
 };
-
-/** How a reason starts when the Digest command failed; what it said follows. */
-const COMMAND_FAILED = 'the Digest command failed: ';
 
 /** Where the last lines of the command's stderr start, in that reason. */
 const IT_SAID = '. It said: ';
@@ -376,7 +375,9 @@ function drawBands(sweep) {
   if (runs) {
     const meter = byId('meter');
     if (sweep.state === 'reading') {
-      const finished = sweep.extracts.filter((x) => x.state !== 'waiting' && x.state !== 'reading');
+      const finished = sweep.extracts.filter(
+        (x) => x.state !== 'waiting' && x.state !== 'reading',
+      );
       byId('running-what').textContent =
         'Reading ' + finished.length + ' of ' + counted(sweep.sourceCount, 'Source');
       byId('running-why').textContent =
@@ -400,40 +401,33 @@ function drawBands(sweep) {
         : sweep.readCount === 1
           ? 'The 1 Extract this Sweep read is kept.'
           : 'The ' + sweep.readCount + ' Extracts this Sweep read are kept.';
-    const failure = failureOf(sweep.reason || '', kept);
+    const failure = failureOf(sweep, kept);
     byId('failed-what').textContent = failure.what;
     byId('failed-why').innerHTML = failure.why;
     byId('failed-acts').hidden = !(failure.again && sweep.readCount > 0);
   }
 }
 
-/** What the failed band says for a reason: its line, its sentence as markup, and its button. */
-function failureOf(reason, kept) {
-  const known = FAILURES[reason];
-  if (known) return { what: known.what, why: known.why(kept), again: known.again };
-  if (reason.startsWith(COMMAND_FAILED)) {
-    return {
-      what: 'Sweep failed: the Digest command failed',
-      why: commandSaid(reason.slice(COMMAND_FAILED.length)),
-      again: true,
-    };
-  }
+/** What the failed band says for a Sweep: its line, its sentence as markup, and its button. */
+function failureOf(sweep, kept) {
+  const reason = sweep.reason || '';
+  const known = FAILURES[sweep.failure];
+  if (known) return { what: known.what(reason), why: known.why(reason, kept), again: known.again };
   return { what: 'Sweep failed: ' + reason, why: esc(kept), again: false };
 }
 
 /**
- * Why the Digest command failed, as a sentence, and the last lines of its
- * stderr as code: "It exited with 3. It said: <code>…</code>".
+ * Why the Digest command failed, as a sentence, the last lines of its stderr
+ * as code, and the way to Settings, where the command is:
+ * "It exited with 3. It said: <code>…</code> Open Settings".
  */
 function commandSaid(detail) {
   const at = detail.indexOf(IT_SAID);
   const why = at < 0 ? detail : detail.slice(0, at);
-  const sentence =
-    esc(capital(why))
-      .replace(/RESEARCH_DIGEST_COMMAND/g, '<code>$&</code>')
-      .replace(/\bSettings\b/g, SETTINGS_LINK) + '.';
-  if (at < 0) return sentence;
-  return sentence + ' It said: <code>' + esc(detail.slice(at + IT_SAID.length)) + '</code>';
+  const sentence = esc(capital(why)).replace(/RESEARCH_DIGEST_COMMAND/g, '<code>$&</code>') + '.';
+  const said =
+    at < 0 ? '' : ' It said: <code>' + esc(detail.slice(at + IT_SAID.length)) + '</code>';
+  return sentence + said + ' <a href="#settings">Open Settings</a>';
 }
 
 /** The Digest of the Sweep on the screen, or why there is none yet. */
@@ -942,22 +936,29 @@ function refused(fault) {
 
 /**
  * The Settings as get_settings tells them: the Digest command the file
- * holds, in the field, and whether the environment decides it instead.
+ * holds, in the field, whether the environment decides it instead, why
+ * research cannot use what decides it, and why it ignores the variable.
  */
 function drawSettings(settings) {
   const digest = settings.digestCommand;
+  const fromEnvironment = digest.from === 'environment';
   byId('s-digest').value = digest.saved === null ? '' : JSON.stringify(digest.saved);
-  byId('s-digest-none').hidden = digest.value !== null;
-  byId('s-digest-env').hidden = digest.from !== 'environment';
-  byId('s-digest-env-why').innerHTML =
-    digest.from === 'environment'
-      ? 'The Host was started with <code>' +
-        esc(digest.variable) +
-        '</code>, so research runs <code>' +
-        esc(JSON.stringify(digest.value)) +
-        '</code>, whatever is saved here. To use what is saved here, take the variable ' +
-        'out where the Host is started.'
-      : '';
+  byId('s-digest-none').hidden = digest.value !== null || digest.problem !== null;
+  byId('s-digest-problem').hidden = digest.problem === null;
+  byId('s-digest-problem-text').textContent = digest.problem || '';
+  byId('s-digest-ignored').hidden = !digest.ignored;
+  byId('s-digest-ignored-text').textContent = digest.ignored || '';
+  byId('s-digest-env').hidden = !fromEnvironment;
+  byId('s-digest-env-why').innerHTML = fromEnvironment
+    ? 'The Host was started with <code>' +
+      esc(digest.variable) +
+      '</code>, so ' +
+      (digest.value === null
+        ? 'it decides the Digest command'
+        : 'research runs <code>' + esc(JSON.stringify(digest.value)) + '</code>') +
+      ', whatever is saved here. To use what is saved here, take the variable out where ' +
+      'the Host is started.'
+    : '';
   byId('s-saved').hidden = true;
   showSettingsRefusal('');
 }

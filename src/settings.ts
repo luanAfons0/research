@@ -12,8 +12,22 @@
  * Page and kept in the settings file, which works however the Host was
  * started. `RESEARCH_DIGEST_COMMAND` still beats the file, and the file beats
  * the default, which is no command: research knows no model (ADR-0002).
+ *
+ * A Digest command that is wrong does not stop the Plugin Server: the Plugin
+ * Page is where the operator fixes it (ADR-0003). A variable that is not a
+ * command, such as the shell line a 1.x systemd drop-in still sets, is
+ * ignored, so the settings file decides and the operator needs nothing but
+ * the Plugin Page; the settings tools say it was ignored and to remove it. A
+ * settings file that is wrong refuses each Digest with a sentence that names
+ * it, until a save from the Plugin Page writes it again.
  */
-import { type Command, readCommand } from './command.ts';
+import {
+  arrayOf,
+  type Command,
+  COMMAND_FORM,
+  type CommandSetting,
+  parseCommand,
+} from './command.ts';
 import { readSettingsFile, writeSettingsFile } from './settings-file.ts';
 
 /** How long one Source may take to answer, in milliseconds. */
@@ -47,8 +61,6 @@ const NOTICE_GAP_MS = 5_000;
 export type Settings = {
   /** How long one Source may take to answer, body and all, in milliseconds. */
   readonly fetchTimeoutMs: number;
-  /** The Digest command in the environment, or null when none is set (ADR-0002, ADR-0003). */
-  readonly digestCommand: Command | null;
   /** How long the Digest command may run before it is stopped, in milliseconds. */
   readonly digestTimeoutMs: number;
   /** How long to wait after one Notice before the next, in milliseconds. */
@@ -63,7 +75,6 @@ export function readSettings(env: NodeJS.ProcessEnv = process.env): Settings {
       env[FETCH_TIMEOUT_VARIABLE],
       FETCH_TIMEOUT_MS,
     ),
-    digestCommand: readCommand(DIGEST_VARIABLE, env[DIGEST_VARIABLE]),
     digestTimeoutMs: milliseconds(
       DIGEST_TIMEOUT_VARIABLE,
       env[DIGEST_TIMEOUT_VARIABLE],
@@ -86,8 +97,11 @@ function milliseconds(variable: string, value: string | undefined, fallback: num
 /** Who decides the Digest command: the environment, the settings file, or neither. */
 export type DecidedBy = 'environment' | 'file' | 'default';
 
-/** The Digest command the next Digest is made with, and who decided it. */
-export type Chosen = { readonly command: Command | null; readonly from: DecidedBy };
+/**
+ * The Digest command the next Digest is made with, who decided it, and why
+ * what decided it cannot be used, if it cannot.
+ */
+export type Chosen = CommandSetting & { readonly from: DecidedBy };
 
 /** The Digest command, as the settings tools tell it. */
 export type DigestCommandView = {
@@ -99,6 +113,10 @@ export type DigestCommandView = {
   readonly saved: readonly string[] | null;
   /** The variable that beats the file. */
   readonly variable: string;
+  /** Why the setting that decides cannot be used, as one sentence, or null. */
+  readonly problem: string | null;
+  /** Why the variable is ignored and what to do about it, as one sentence, or null. */
+  readonly ignored: string | null;
 };
 
 /** The Digest command of one running Plugin Server: read it, tell it, change it. */
@@ -112,39 +130,45 @@ export type DigestCommandSetting = {
 };
 
 /**
- * The Digest command, from the environment's value and the settings file in
- * the Plugin directory. The file is read once, here, so a file that is wrong
- * stops the Plugin Server with a sentence before anything starts.
+ * The Digest command, from the environment and the settings file in the
+ * Plugin directory. Each is read once, here. Nothing that is wrong is thrown,
+ * so the Plugin Server stays up for the operator to fix it.
  */
 export function openDigestCommand(
-  fromEnvironment: Command | null,
+  env: NodeJS.ProcessEnv = process.env,
   directory = '.',
 ): DigestCommandSetting {
-  let saved = readSettingsFile(directory).digestCommand;
+  const given = env[DIGEST_VARIABLE]?.trim() ?? '';
+  const environment = given === '' ? null : parseCommand(given);
+  const ignored =
+    given !== '' && environment === null
+      ? `${DIGEST_VARIABLE} is ${given}, which is not ${COMMAND_FORM}, so research ignores it. ` +
+        'Remove it from where the Host is started, such as the systemd drop-in of research ' +
+        '1.x, and set the Digest command in Settings.'
+      : null;
+  let file = readSettingsFile(directory);
   const current = (): Chosen =>
-    fromEnvironment !== null
-      ? { command: fromEnvironment, from: 'environment' }
-      : saved !== null
-        ? { command: saved, from: 'file' }
-        : { command: null, from: 'default' };
+    environment !== null
+      ? { command: environment, problem: null, from: 'environment' }
+      : file.command !== null || file.problem !== null
+        ? { ...file, from: 'file' }
+        : { command: null, problem: null, from: 'default' };
   return {
     current,
     view: () => {
       const chosen = current();
       return {
-        value: arrayOf(chosen.command),
+        value: chosen.command === null ? null : arrayOf(chosen.command),
         from: chosen.from,
-        saved: arrayOf(saved),
+        saved: file.command === null ? null : arrayOf(file.command),
         variable: DIGEST_VARIABLE,
+        problem: chosen.problem,
+        ignored,
       };
     },
     save: (command) => {
       writeSettingsFile({ digestCommand: command }, directory);
-      saved = command;
+      file = { command, problem: null };
     },
   };
-}
-
-function arrayOf(command: Command | null): readonly string[] | null {
-  return command === null ? null : [command.program, ...command.args];
 }

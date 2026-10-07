@@ -46,6 +46,8 @@ export type Sweep = {
   endedAt: string | null;
   state: string;
   reason: string | null;
+  /** The stable code of the reason, which the Plugin Page maps to what it says. */
+  failure: string | null;
   sourceCount: number;
   readCount: number;
   digest: string | null;

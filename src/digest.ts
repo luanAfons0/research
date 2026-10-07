@@ -17,8 +17,8 @@
  * and does not remove it, which is why the README asks for a command with no
  * tools (ADR-0002).
  */
-import { COMMAND_FORM, findProgram, startCommand } from './command.ts';
-import { type Chosen, DIGEST_VARIABLE } from './settings.ts';
+import { type Command, COMMAND_FORM, findProgram, startCommand } from './command.ts';
+import { type Chosen, type DecidedBy, DIGEST_VARIABLE } from './settings.ts';
 
 /**
  * A model reads only so much text, so each Extract is cut to this many
@@ -100,15 +100,18 @@ function oneLine(text: string): string {
 }
 
 /**
- * Whether the command can be run: the file its program is started from and
- * its arguments, or why not, as a Sweep's reason and as a tool's refusal.
+ * Whether the command can be run: the command with the file its program is
+ * started from, or why not, as a Sweep's reason and as a tool's refusal.
  */
 export type CommandCheck =
-  | { readonly file: string; readonly args: readonly string[] }
+  | { readonly command: Command }
   | { readonly reason: string; readonly refusal: string };
 
 /** Why a Sweep failed when there is no command to make its Digest with (ADR-0002). */
 export const NO_DIGEST_COMMAND = 'no Digest command is set; set one in Settings';
+
+/** Why a Sweep failed with no Digest command, as a research before Settings said it. */
+export const NO_DIGEST_COMMAND_1X = 'no Digest command is set in RESEARCH_DIGEST_COMMAND';
 
 /** The start of the reason a Sweep failed with when its Digest command failed. */
 export const COMMAND_FAILED = 'the Digest command failed';
@@ -116,13 +119,23 @@ export const COMMAND_FAILED = 'the Digest command failed';
 /** Where the operator sets the Digest command: the Plugin Page's Settings view. */
 const SETTINGS = 'Settings';
 
+/** Where a wrong Digest command is fixed, and how a sentence names it, by who decided it. */
+const FIXED_IN: Record<DecidedBy, { readonly place: string; readonly named: string }> = {
+  environment: { place: DIGEST_VARIABLE, named: DIGEST_VARIABLE },
+  file: { place: SETTINGS, named: `The Digest command in ${SETTINGS}` },
+  default: { place: SETTINGS, named: `The Digest command in ${SETTINGS}` },
+};
+
 /**
  * The command, when it is set and its program can be found. A program
  * installed through nvm is on a person's PATH and not on the Host service's,
  * so the sentence says to give its absolute path, where the command was set.
  */
 export function checkCommand(chosen: Chosen, env = process.env): CommandCheck {
-  const { command } = chosen;
+  const { command, problem } = chosen;
+  if (problem !== null) {
+    return { reason: `${COMMAND_FAILED}: ${problem.replace(/\.$/, '')}`, refusal: problem };
+  }
   if (command === null) {
     return {
       reason: NO_DIGEST_COMMAND,
@@ -133,15 +146,13 @@ export function checkCommand(chosen: Chosen, env = process.env): CommandCheck {
     };
   }
   const file = findProgram(command.program, env);
-  if (file !== null) return { file, args: command.args };
-  const program = command.program;
-  const where = chosen.from === 'environment' ? DIGEST_VARIABLE : SETTINGS;
-  const named =
-    chosen.from === 'environment' ? DIGEST_VARIABLE : `The Digest command in ${SETTINGS}`;
+  if (file !== null) return { command: { program: file, args: command.args } };
+  const { program } = command;
+  const { place, named } = FIXED_IN[chosen.from];
   return {
     reason:
       `${COMMAND_FAILED}: "${program}" is not found on the PATH; give its absolute path in ` +
-      where,
+      place,
     refusal:
       `${named} names "${program}", which is not found on the Host's PATH. Give its absolute ` +
       'path: a command installed through nvm is not on the PATH of the Host service.',
@@ -162,15 +173,14 @@ export type RunOptions = {
  * command's stderr, to follow `the Digest command failed: `.
  */
 export function runCommand(
-  file: string,
-  args: readonly string[],
+  command: Command,
   prompt: string,
   options: RunOptions,
 ): Promise<string> {
   return new Promise((done, fail) => {
     // Stopping it stops whatever it started too, so nothing it started holds
     // the pipes open after it, or runs on with no Sweep to answer.
-    const { child, end: killAll } = startCommand(file, args);
+    const { child, end: killAll } = startCommand(command);
     let stdout = '';
     let stderr = '';
     let timedOut = false;

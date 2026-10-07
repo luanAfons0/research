@@ -11,10 +11,21 @@
  * The file is written whole, to a file beside it, and then renamed over it, so
  * a Plugin Server that stops halfway leaves the old file or the new one and
  * never half of either. A key this research does not know is kept as it is.
+ *
+ * A file that research cannot use does not stop the Plugin Server, because
+ * the Plugin Page, which the Plugin Server serves, is where it is fixed. Each
+ * Digest is refused with a sentence that names the file, and the next save
+ * from the Plugin Page writes over it.
  */
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { COMMAND_FORM, commandFrom, type Command } from './command.ts';
+import {
+  arrayOf,
+  COMMAND_FORM,
+  commandFrom,
+  type Command,
+  type CommandSetting,
+} from './command.ts';
 
 /** The name of the settings file in the Plugin directory. */
 export const SETTINGS_FILE = 'settings.json';
@@ -26,38 +37,53 @@ export type SavedSettings = {
 };
 
 /**
- * Read the settings file in a Plugin directory. No file is no setting. A file
- * that is not what research writes throws a sentence that names it.
+ * Read the Digest command in the settings file of a Plugin directory. No file
+ * is no command. A file research cannot use is a problem: a sentence that
+ * names the file and says how to fix it in Settings.
  */
-export function readSettingsFile(directory = '.'): SavedSettings {
-  const whole = readWhole(directory);
+export function readSettingsFile(directory = '.'): CommandSetting {
+  const path = pathOf(directory);
+  const whole = readWhole(path);
+  if (whole === null) {
+    return {
+      command: null,
+      problem:
+        `${path} is not a JSON object; save the Digest command in Settings to write it ` +
+        'again.',
+    };
+  }
   const given = whole['digestCommand'];
-  if (given === undefined || given === null) return { digestCommand: null };
+  if (given === undefined || given === null) return { command: null, problem: null };
   const command = commandFrom(given);
   if (command === null) {
-    throw new Error(
-      `${pathOf(directory)} holds the Digest command ${JSON.stringify(given)}; set it to ` +
-        `${COMMAND_FORM} on the Plugin Page, or remove the file.`,
-    );
+    return {
+      command: null,
+      problem:
+        `${path} holds the Digest command ${JSON.stringify(given)}; set it to ${COMMAND_FORM}, ` +
+        'in Settings.',
+    };
   }
-  return { digestCommand: command };
+  return { command, problem: null };
 }
 
-/** Write these settings into the file, and keep every key this research does not know. */
+/**
+ * Write these settings into the file, and keep every key this research does
+ * not know. A file that is not a JSON object holds nothing to keep, so it is
+ * written over.
+ */
 export function writeSettingsFile(settings: SavedSettings, directory = '.'): void {
-  const whole = readWhole(directory);
+  const path = pathOf(directory);
+  const whole = readWhole(path) ?? {};
   const { digestCommand } = settings;
   if (digestCommand === null) delete whole['digestCommand'];
-  else whole['digestCommand'] = [digestCommand.program, ...digestCommand.args];
-  const path = pathOf(directory);
+  else whole['digestCommand'] = arrayOf(digestCommand);
   const next = `${path}.next`;
   writeFileSync(next, `${JSON.stringify(whole, null, 2)}\n`);
   renameSync(next, path);
 }
 
-/** The whole file as an object, or an empty one when there is no file. */
-function readWhole(directory: string): Record<string, unknown> {
-  const path = pathOf(directory);
+/** The whole file as an object, an empty one when there is no file, or null when it is not one. */
+function readWhole(path: string): Record<string, unknown> | null {
   let text: string;
   try {
     text = readFileSync(path, 'utf8');
@@ -69,11 +95,9 @@ function readWhole(directory: string): Record<string, unknown> {
   try {
     parsed = JSON.parse(text);
   } catch {
-    parsed = undefined;
+    return null;
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`${path} is not a JSON object. Fix it, or remove it to start again.`);
-  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
   return parsed as Record<string, unknown>;
 }
 

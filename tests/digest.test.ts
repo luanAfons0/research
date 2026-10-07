@@ -240,6 +240,7 @@ test('a command that is not found fails the Sweep with a sentence that names it'
     'the Digest command failed: "no-such-model-runner" is not found on the PATH; give its ' +
       'absolute path in RESEARCH_DIGEST_COMMAND',
   );
+  assert.equal(sweep.failure, 'digest-command-failed');
   assert.equal(plugin.output(), '');
 });
 
@@ -316,29 +317,72 @@ test('each argument reaches the program unchanged, with no shell to read it', as
   assert.deepEqual(JSON.parse(await readFile(log, 'utf8')), args);
 });
 
-test('a Digest command that is not a JSON array of strings stops the Plugin Server with a sentence', async (t) => {
+/** What get_settings says about the Digest command. */
+async function digestSetting(plugin: Started): Promise<Record<string, unknown>> {
+  return structureOf<{ settings: { digestCommand: Record<string, unknown> } }>(
+    await plugin.call('get_settings'),
+  ).settings.digestCommand;
+}
+
+/** The sentence get_settings says beside a RESEARCH_DIGEST_COMMAND it ignores. */
+function ignoredSentence(given: string): string {
+  return (
+    `RESEARCH_DIGEST_COMMAND is ${given}, which is not a JSON array of strings, the program ` +
+    'first and then each of its arguments, such as ["ollama","run","<model>"], so research ' +
+    'ignores it. Remove it from where the Host is started, such as the systemd drop-in of ' +
+    'research 1.x, and set the Digest command in Settings.'
+  );
+}
+
+test('a Digest command that is not a JSON array of strings is ignored, with a sentence beside the setting, and the Plugin Server stays up', async (t) => {
+  const sources = await serveSources(t);
   const wrong = ['ollama run llama3', '[]', '[""]', '["ollama", 3]', '{"program":"ollama"}'];
   for (const given of wrong) {
-    const plugin = await startPluginServer(t, { env: { RESEARCH_DIGEST_COMMAND: given } });
+    const plugin = await startedAndShaken(t, { env: { RESEARCH_DIGEST_COMMAND: given } });
 
-    const ending = await plugin.ended();
+    const setting = await digestSetting(plugin);
+    const sweep = await sweptWhole(plugin, [sources.address('/notes.txt')]);
 
-    assert.equal(ending.code, 1, given);
-    assert.equal(
-      plugin.output(),
-      `research: RESEARCH_DIGEST_COMMAND is ${given}; set it to a JSON array of strings, the ` +
-        'program first and then each of its arguments, such as ["ollama","run","<model>"].\n',
+    assert.deepEqual(
+      setting,
+      {
+        value: null,
+        from: 'default',
+        saved: null,
+        variable: 'RESEARCH_DIGEST_COMMAND',
+        problem: null,
+        ignored: ignoredSentence(given),
+      },
+      given,
     );
-    assert.equal(plugin.lines().length, 0, 'something reached stdout');
+    assert.equal(sweep.state, 'failed', given);
+    assert.equal(sweep.failure, 'no-digest-command', given);
+    assert.equal(plugin.output(), '', given);
   }
 });
 
-test('no source file starts a shell, or stops a process group by a negative id', async () => {
+test('with RESEARCH_DIGEST_COMMAND in the old shell-line form, the Digest command in Settings makes the Digest', async (t) => {
+  const sources = await serveSources(t);
+  const plugin = await startedAndShaken(t, {
+    env: { RESEARCH_DIGEST_COMMAND: 'ollama run llama3.2' },
+  });
+
+  await plugin.call('update_settings', { digestCommand: [DIGEST_PROGRAM] });
+  const setting = await digestSetting(plugin);
+  const sweep = await sweptWhole(plugin, [sources.address('/notes.txt')]);
+
+  assert.equal(setting['from'], 'file');
+  assert.deepEqual(setting['value'], [DIGEST_PROGRAM]);
+  assert.equal(setting['ignored'], ignoredSentence('ollama run llama3.2'));
+  assert.equal(sweep.state, 'done', sweep.reason ?? '');
+});
+
+test('no source file starts a shell, or runs the kill program', async () => {
   const source = join(REPOSITORY, 'src');
   for (const name of await readdir(source)) {
     const text = await readFile(join(source, name), 'utf8');
     assert.doesNotMatch(text, /\/bin\/sh|['"]sh['"]|shell:\s*true/, name);
-    assert.doesNotMatch(text, /process\.kill\(\s*-/, name);
+    assert.doesNotMatch(text, /spawn(Sync)?\(\s*['"]kill['"]/, name);
   }
 });
 

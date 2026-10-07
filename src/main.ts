@@ -19,13 +19,15 @@ import { openStore } from './store.ts';
 import { failUnfinished } from './sweeps.ts';
 import { toolsFor } from './tools.ts';
 
-// A setting or a file that is wrong is one sentence and a non-zero exit: the
-// Index Page shows the Plugin Stopped and the journal carries the reason. The
-// Host does not start it again.
+// A time that is wrong, or a data file that cannot be opened, is one sentence
+// and a non-zero exit: the Index Page shows the Plugin Stopped and the journal
+// carries the reason. The Host does not start it again. A Digest command that
+// is wrong does not stop it: the Plugin Page, which needs the Plugin Server,
+// is where it is fixed.
 const { settings, digestCommand, store, notices } = (() => {
   try {
     const settings = readSettings();
-    const digestCommand = openDigestCommand(settings.digestCommand);
+    const digestCommand = openDigestCommand();
     const store = openStore();
     // Notices wait on the queue until the Host's handshake says whether it
     // takes them (FirstMate ADR-0014).

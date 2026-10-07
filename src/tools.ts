@@ -133,7 +133,8 @@ export function toolsFor(parts: Parts): readonly Tool[] {
     {
       name: 'get_sweep',
       description:
-        'One Sweep: its state, why it failed, its Digest and when it was made, and each ' +
+        'One Sweep: its state, why it failed and the code of that reason, its Digest and ' +
+        'when it was made, and each ' +
         'Extract with its text or the reason it has none, and whether the prompt cut it. ' +
         'Give "id" for one Sweep, or "topic" alone for the latest Sweep of that Topic (null ' +
         'when it was never swept).',
@@ -182,7 +183,9 @@ export function toolsFor(parts: Parts): readonly Tool[] {
         'The settings an operator chooses: the Digest command, as the program and its ' +
         'arguments the next Digest runs (null for none); who decides it ("environment" when ' +
         'RESEARCH_DIGEST_COMMAND is set, "file" when the settings file holds it, "default" ' +
-        'for none); and what the settings file holds.',
+        'for none); what the settings file holds; the problem: the sentence that says why ' +
+        'what decides cannot be used, or null; and ignored: the sentence that says why ' +
+        'RESEARCH_DIGEST_COMMAND, set but not a command, is ignored, or null.',
       inputSchema: { type: 'object', properties: {}, required: [] },
       call: () => told(settingsOf(parts)),
     },
@@ -193,7 +196,8 @@ export function toolsFor(parts: Parts): readonly Tool[] {
         'Change the settings an operator chooses, and keep them in the settings file in the ' +
         'Plugin directory. What is not given is kept. RESEARCH_DIGEST_COMMAND, when it is ' +
         'set, still decides the Digest command. A bad value is refused with one sentence, ' +
-        'and the file is left as it was.',
+        'and the file is left as it was. A settings file that is not a JSON object is ' +
+        'written over.',
       inputSchema: {
         type: 'object',
         properties: {
