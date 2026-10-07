@@ -26,6 +26,8 @@ import {
   checkCommand,
   COMMAND_FAILED,
   CUT_AT,
+  NO_DIGEST_COMMAND,
+  NO_DIGEST_COMMAND_1X,
   promptFor,
   runCommand,
   type DigestTopic,
@@ -34,6 +36,7 @@ import {
 import { badInput, sentenceFor } from './mcp.ts';
 import { noticeFor, type EndedSweep, type Notices } from './notices.ts';
 import { readSource, type ReadOptions } from './reader.ts';
+import type { DigestCommandSetting } from './settings.ts';
 import { now, within, type Store } from './store.ts';
 
 /** At most this many Sources of one Sweep are read at the same time. */
@@ -43,6 +46,28 @@ export const MOST_AT_ONCE = 4;
 export const NO_SOURCE_READ = 'no Source could be read';
 /** Why a Sweep failed when the Plugin Server stopped while it ran. */
 export const STOPPED = 'the Plugin Server stopped before the Sweep ended';
+/**
+ * The stable code of each reason a Sweep fails with. The reason is a sentence
+ * for a person and may change; the Plugin Page maps the code to what it says,
+ * so each sentence is spelled once, here and in `digest.ts`.
+ */
+export type Failure =
+  | 'no-source-read'
+  | 'no-digest-command'
+  | 'digest-command-failed'
+  | 'plugin-server-stopped';
+
+/** The code of a reason, or null for none or for a reason with no code. */
+function failureOf(reason: string | null): Failure | null {
+  if (reason === null) return null;
+  if (reason === NO_SOURCE_READ) return 'no-source-read';
+  // A Sweep a research before Settings kept says it the old way.
+  if (reason === NO_DIGEST_COMMAND || reason === NO_DIGEST_COMMAND_1X) return 'no-digest-command';
+  if (reason.startsWith(`${COMMAND_FAILED}: `)) return 'digest-command-failed';
+  if (reason === STOPPED) return 'plugin-server-stopped';
+  return null;
+}
+
 /** Why an Extract has no text when the Plugin Server stopped before it was read. */
 const NOT_READ_STOPPED = 'not read: the Plugin Server stopped first';
 
@@ -53,8 +78,8 @@ export type Sweeping = {
   readonly reading: ReadOptions;
   /** How the Digest is made (ADR-0002). */
   readonly digesting: {
-    /** The command in RESEARCH_DIGEST_COMMAND, or null when none is set. */
-    readonly command: string | null;
+    /** The Digest command, from the environment or the settings file, read at each Digest. */
+    readonly command: DigestCommandSetting;
     /** How long it may run before it is stopped. */
     readonly timeoutMs: number;
   };
@@ -73,6 +98,8 @@ export type SweepSummary = {
   readonly state: string;
   /** Why it failed, or null when it did not. */
   readonly reason: string | null;
+  /** The stable code of that reason, which the Plugin Page maps, or null. */
+  readonly failure: Failure | null;
   /** How many Sources it reads: one Extract each. */
   readonly sourceCount: number;
   /** How many of them gave text. */
@@ -290,7 +317,7 @@ function withText(store: Store, id: number): PromptExtract[] {
  */
 async function makeDigest(sweeping: Sweeping, id: number): Promise<void> {
   const { store, digesting, reading } = sweeping;
-  const checked = checkCommand(digesting.command);
+  const checked = checkCommand(digesting.command.current());
   if ('reason' in checked) {
     end(store, id, 'failed', checked.reason);
     return;
@@ -361,10 +388,12 @@ export function remakeDigest(sweeping: Sweeping, id: number): SweepSummary {
           'Sweep the Topic again.',
       );
     }
-    const checked = checkCommand(sweeping.digesting.command);
+    const checked = checkCommand(sweeping.digesting.command.current());
     if ('refusal' in checked) throw badInput(checked.refusal);
     store
-      .prepare("UPDATE sweeps SET state = 'digesting', reason = NULL, ended_at = NULL WHERE id = ?")
+      .prepare(
+        "UPDATE sweeps SET state = 'digesting', reason = NULL, ended_at = NULL WHERE id = ?",
+      )
       .run(id);
   });
   void makeDigest(sweeping, id).catch((fault: unknown) => failLoudly(sweeping, id, fault));
@@ -479,6 +508,7 @@ function summaryOf(row: SweepRow): SweepSummary {
     endedAt: row.ended_at,
     state: row.state,
     reason: row.reason,
+    failure: failureOf(row.reason),
     sourceCount: row.source_count,
     readCount: row.read_count,
   };

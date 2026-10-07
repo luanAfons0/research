@@ -1,13 +1,14 @@
 /**
  * The Digest of a Sweep: a prompt made of the rules, the Topic and the
- * Extracts, given to the command in `RESEARCH_DIGEST_COMMAND` on stdin, and
- * the Digest read from its stdout (ADR-0002).
+ * Extracts, given to the Digest command on stdin, and the Digest read from
+ * its stdout (ADR-0002). The operator sets the command in Settings on the
+ * Plugin Page, and `RESEARCH_DIGEST_COMMAND` beats it.
  *
- * research knows no model. The command is run by `sh`, so it may carry its own
- * arguments, such as `ollama run <model>`, and anything that reads a prompt
- * and prints text will do. A model that thinks out loud in a `<think>` block,
- * or wraps its answer in a code fence, is forgiven both, as scribe forgives
- * them in its Minutes.
+ * research knows no model. The command is a program and its arguments, such
+ * as `["ollama","run","<model>"]`, started with no shell (ADR-0003), and
+ * anything that reads a prompt and prints text will do. A model that thinks
+ * out loud in a `<think>` block, or wraps its answer in a code fence, is
+ * forgiven both, as scribe forgives them in its Minutes.
  *
  * An Extract is text from the web, and a page can write to the model as well
  * as to the operator. Each Extract goes in its own `<source>` tag, the rules
@@ -16,23 +17,14 @@
  * and does not remove it, which is why the README asks for a command with no
  * tools (ADR-0002).
  */
-import { spawn } from 'node:child_process';
-import { accessSync, constants } from 'node:fs';
-import { delimiter, join } from 'node:path';
-import { DIGEST_VARIABLE } from './settings.ts';
+import { type Command, COMMAND_FORM, findProgram, startCommand } from './command.ts';
+import { type Chosen, type DecidedBy, DIGEST_VARIABLE } from './settings.ts';
 
 /**
  * A model reads only so much text, so each Extract is cut to this many
  * characters in the prompt. The whole Extract stays stored (ADR-0002).
  */
 export const CUT_AT = 20_000;
-
-/**
- * Words `sh` runs itself. A command that starts with one, such as
- * `cd /var/tmp && …`, has no program to look for on the PATH, so it is left to
- * `sh` to run.
- */
-const SHELL_WORDS: ReadonlySet<string> = new Set(['cd', 'exec', 'export', 'env', 'command', '.']);
 
 /** How many of the last lines of the command's stderr a failure keeps. */
 const STDERR_LINES = 3;
@@ -108,60 +100,62 @@ function oneLine(text: string): string {
 }
 
 /**
- * Whether the command can be run: the command, or why not, as a Sweep's
- * reason and as a tool's refusal.
+ * Whether the command can be run: the command with the file its program is
+ * started from, or why not, as a Sweep's reason and as a tool's refusal.
  */
 export type CommandCheck =
-  { readonly command: string } | { readonly reason: string; readonly refusal: string };
+  | { readonly command: Command }
+  | { readonly reason: string; readonly refusal: string };
 
 /** Why a Sweep failed when there is no command to make its Digest with (ADR-0002). */
-export const NO_DIGEST_COMMAND = `no Digest command is set in ${DIGEST_VARIABLE}`;
+export const NO_DIGEST_COMMAND = 'no Digest command is set; set one in Settings';
+
+/** Why a Sweep failed with no Digest command, as a research before Settings said it. */
+export const NO_DIGEST_COMMAND_1X = 'no Digest command is set in RESEARCH_DIGEST_COMMAND';
 
 /** The start of the reason a Sweep failed with when its Digest command failed. */
 export const COMMAND_FAILED = 'the Digest command failed';
 
+/** Where the operator sets the Digest command: the Plugin Page's Settings view. */
+const SETTINGS = 'Settings';
+
+/** Where a wrong Digest command is fixed, and how a sentence names it, by who decided it. */
+const FIXED_IN: Record<DecidedBy, { readonly place: string; readonly named: string }> = {
+  environment: { place: DIGEST_VARIABLE, named: DIGEST_VARIABLE },
+  file: { place: SETTINGS, named: `The Digest command in ${SETTINGS}` },
+  default: { place: SETTINGS, named: `The Digest command in ${SETTINGS}` },
+};
+
 /**
- * The command, when it is set and can be found on the PATH. A command
+ * The command, when it is set and its program can be found. A program
  * installed through nvm is on a person's PATH and not on the Host service's,
- * so the sentence says to give its absolute path.
+ * so the sentence says to give its absolute path, where the command was set.
  */
-export function checkCommand(
-  command: string | null,
-  path = process.env['PATH'] ?? '',
-): CommandCheck {
+export function checkCommand(chosen: Chosen, env = process.env): CommandCheck {
+  const { command, problem } = chosen;
+  if (problem !== null) {
+    return { reason: `${COMMAND_FAILED}: ${problem.replace(/\.$/, '')}`, refusal: problem };
+  }
   if (command === null) {
     return {
       reason: NO_DIGEST_COMMAND,
       refusal:
-        `make_digest needs ${DIGEST_VARIABLE}: set it, where the Host is started, to a ` +
-        'command that reads a prompt on stdin and prints the Digest, such as ' +
-        '"ollama run <model>". The README says more.',
+        `make_digest needs a Digest command. Set one in ${SETTINGS} on research's Plugin ` +
+        'Page: a command that reads a prompt on stdin and prints the Digest, as ' +
+        `${COMMAND_FORM}. The README says more.`,
     };
   }
-  const program = command.split(/\s+/)[0] ?? '';
-  if (SHELL_WORDS.has(program)) return { command };
-  const candidates = program.includes('/')
-    ? [program]
-    : path
-        .split(delimiter)
-        .filter((dir) => dir !== '')
-        .map((dir) => join(dir, program));
-  for (const candidate of candidates) {
-    try {
-      accessSync(candidate, constants.X_OK);
-      return { command };
-    } catch {
-      // Not this one; try the next directory.
-    }
-  }
+  const file = findProgram(command.program, env);
+  if (file !== null) return { command: { program: file, args: command.args } };
+  const { program } = command;
+  const { place, named } = FIXED_IN[chosen.from];
   return {
     reason:
       `${COMMAND_FAILED}: "${program}" is not found on the PATH; give its absolute path in ` +
-      DIGEST_VARIABLE,
+      place,
     refusal:
-      `${DIGEST_VARIABLE} names "${program}", which is not found on the Host's PATH. Give ` +
-      'its absolute path: a command installed through nvm is not on the PATH of the Host ' +
-      'service.',
+      `${named} names "${program}", which is not found on the Host's PATH. Give its absolute ` +
+      'path: a command installed through nvm is not on the PATH of the Host service.',
   };
 }
 
@@ -178,24 +172,18 @@ export type RunOptions = {
  * rejects with a sentence that says what went wrong and the last lines of the
  * command's stderr, to follow `the Digest command failed: `.
  */
-export function runCommand(command: string, prompt: string, options: RunOptions): Promise<string> {
+export function runCommand(
+  command: Command,
+  prompt: string,
+  options: RunOptions,
+): Promise<string> {
   return new Promise((done, fail) => {
-    // Its own process group, so that stopping it stops whatever `sh` started
-    // too, and nothing it started holds the pipes open after it.
-    const child = spawn('/bin/sh', ['-c', command], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      detached: true,
-    });
+    // Stopping it stops whatever it started too, so nothing it started holds
+    // the pipes open after it, or runs on with no Sweep to answer.
+    const { child, end: killAll } = startCommand(command);
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    const killAll = (): void => {
-      try {
-        if (child.pid !== undefined) process.kill(-child.pid, 'SIGKILL');
-      } catch {
-        // It has already ended.
-      }
-    };
     const timer = setTimeout(() => {
       timedOut = true;
       killAll();

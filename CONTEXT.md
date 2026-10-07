@@ -38,6 +38,22 @@ question, in that question's language. Each point it makes cites the Source it
 came from.
 _Avoid_: summary, resume, report, answer
 
+**Digest command**:
+The program and its arguments that make a Digest: it reads a prompt on stdin
+and prints the Digest on stdout. research knows no model; the operator chooses
+this command.
+_Avoid_: model, prompt command, LLM, shell line
+
+**Settings view**:
+The part of the Plugin Page, at `#settings`, where the operator sets the
+Digest command, and sees who decides it and why it cannot be used.
+_Avoid_: preferences, options, config page
+
+**settings file**:
+`settings.json`, in research's own directory beside `research.db`: what the
+operator set in the Settings view. `RESEARCH_DIGEST_COMMAND` beats it.
+_Avoid_: config, config file, preferences
+
 ## Relationships
 
 - A Topic has many Sources. A Source belongs to one Topic.
@@ -50,8 +66,12 @@ _Avoid_: summary, resume, report, answer
   soon after the last waits its turn.
 - A Sweep reads the Sources a Topic had when it started. Deleting a Source
   keeps its old Extracts; deleting a Topic deletes its Sweeps.
-- research knows no model. The Digest comes from a command you choose, and
-  without one the text of each Source is still kept.
+- research knows no model. The Digest comes from a Digest command you choose,
+  and without one the text of each Source is still kept.
+- The Settings view writes the Digest command to the settings file. A Digest
+  command that is wrong does not stop the Plugin Server. A variable that is
+  wrong is ignored, and the Settings view says so; a settings file that is
+  wrong refuses each Digest, and the Settings view says why.
 
 ## Flagged ambiguities
 

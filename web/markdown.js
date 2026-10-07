@@ -207,7 +207,8 @@
     }
     const tag = ordered ? 'ol' : 'ul';
     return {
-      html: '<' + tag + '>' + items.map((text) => '<li>' + text + '</li>').join('') + '</' + tag + '>',
+      html:
+        '<' + tag + '>' + items.map((text) => '<li>' + text + '</li>').join('') + '</' + tag + '>',
       next: i,
     };
   }

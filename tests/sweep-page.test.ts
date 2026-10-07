@@ -102,8 +102,8 @@ test('while a Sweep runs, the page asks again, and shows it fail for want of a D
   assert.equal(page.byId('failed-what').textContent, 'Sweep failed: no Digest command is set');
   assert.equal(
     page.byId('failed-why').innerHTML,
-    'Set <code>RESEARCH_DIGEST_COMMAND</code> where the Host starts, then make the Digest ' +
-      'again. The 1 Extract this Sweep read is kept.',
+    'Set one in <a href="#settings">Settings</a>, then make the Digest again. The 1 Extract ' +
+      'this Sweep read is kept.',
   );
   assert.equal(
     page.byId('digest-words').textContent,

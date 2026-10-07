@@ -4,16 +4,17 @@
  * and prints the Digest. A Sweep ends `done` with it, or `failed` with the
  * reason, and make_digest makes it again from the stored Extracts.
  *
- * The command is a fixture, `tests/fixtures/digest`, that keeps a copy of the
- * prompt it got and prints a fixed Digest. Everything else is real: the
+ * The command is a fixture, `tests/fixtures/digest` (`digest.cmd` on Windows),
+ * that keeps a copy of the prompt it got and prints a fixed Digest. Everything else is real: the
  * Plugin Server as the Host speaks to it, and the Sources over HTTP.
  */
 import { strict as assert } from 'node:assert';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
   makeDirectory,
+  REPOSITORY,
   startedAndShaken,
   startPluginServer,
   structureOf,
@@ -21,7 +22,9 @@ import {
 } from './helpers/plugin.ts';
 import { LONG_TEXT, serveSources } from './helpers/sources.ts';
 import {
+  commandOf,
   DIGEST_COMMAND,
+  DIGEST_PROGRAM,
   ended,
   sweepNamed,
   sweepOf,
@@ -51,6 +54,16 @@ async function withCommand(
     env: { RESEARCH_DIGEST_COMMAND: DIGEST_COMMAND, RESEARCH_TEST_PROMPT_LOG: log, ...env },
   });
   return { plugin, log };
+}
+
+/** Whether a process with this id still runs. */
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** make_digest's answer, or the refusal it was given. */
@@ -216,7 +229,7 @@ test('a command that exits non-zero fails the Sweep with the last lines of its s
 test('a command that is not found fails the Sweep with a sentence that names it', async (t) => {
   const sources = await serveSources(t);
   const plugin = await startedAndShaken(t, {
-    env: { RESEARCH_DIGEST_COMMAND: 'no-such-model-runner --fast' },
+    env: { RESEARCH_DIGEST_COMMAND: commandOf('no-such-model-runner', '--fast') },
   });
 
   const sweep = await sweptWhole(plugin, [sources.address('/notes.txt')]);
@@ -227,6 +240,7 @@ test('a command that is not found fails the Sweep with a sentence that names it'
     'the Digest command failed: "no-such-model-runner" is not found on the PATH; give its ' +
       'absolute path in RESEARCH_DIGEST_COMMAND',
   );
+  assert.equal(sweep.failure, 'digest-command-failed');
   assert.equal(plugin.output(), '');
 });
 
@@ -243,9 +257,11 @@ test('a command that prints nothing fails the Sweep', async (t) => {
 test('a command that runs past its time is stopped, and the Sweep fails with what it said', async (t) => {
   const sources = await serveSources(t);
   const hold = join(await makeDirectory(t), 'never');
+  // Long enough for the command to say its line: on Windows, cmd.exe and then
+  // Node start before it does.
   const { plugin } = await withCommand(t, {
     RESEARCH_TEST_DIGEST_HOLD: hold,
-    RESEARCH_DIGEST_TIMEOUT_MS: '300',
+    RESEARCH_DIGEST_TIMEOUT_MS: '2000',
   });
 
   const sweep = await sweptWhole(plugin, [sources.address('/notes.txt')]);
@@ -253,19 +269,121 @@ test('a command that runs past its time is stopped, and the Sweep fails with wha
   assert.equal(sweep.state, 'failed');
   assert.equal(
     sweep.reason,
-    'the Digest command failed: it ran for 300 ms and was stopped. It said: loading the model',
+    'the Digest command failed: it ran for 2000 ms and was stopped. It said: loading the model',
   );
 });
 
-test('a command that sh runs itself is not looked for on the PATH', async (t) => {
+test('a command that runs past its time is stopped with every process it started', async (t) => {
   const sources = await serveSources(t);
+  const place = await makeDirectory(t);
+  const hold = join(place, 'never');
+  const started = join(place, 'child.pid');
+  const { plugin } = await withCommand(t, {
+    RESEARCH_TEST_DIGEST_HOLD: hold,
+    RESEARCH_TEST_DIGEST_CHILD: started,
+    RESEARCH_DIGEST_TIMEOUT_MS: '1000',
+  });
+
+  const sweep = await sweptWhole(plugin, [sources.address('/notes.txt')]);
+  const child = Number(await readFile(started, 'utf8'));
+
+  assert.equal(sweep.state, 'failed');
+  assert.match(sweep.reason ?? '', /^the Digest command failed: it ran for 1000 ms and was/);
+  await until(`that process ${child}, which the command started, ended`, () => !running(child));
+});
+
+test('each argument reaches the program unchanged, with no shell to read it', async (t) => {
+  const sources = await serveSources(t);
+  const log = join(await makeDirectory(t), 'args.json');
+  const args = [
+    'two words',
+    'say "hi"',
+    "it's",
+    'a&b|c<d>e^f',
+    '%PATH% $HOME `id` $(id)',
+    'back\\slash\\',
+    '; exit 7',
+  ];
   const plugin = await startedAndShaken(t, {
-    env: { RESEARCH_DIGEST_COMMAND: `cd /tmp && exec ${DIGEST_COMMAND}` },
+    env: {
+      RESEARCH_DIGEST_COMMAND: commandOf(DIGEST_PROGRAM, ...args),
+      RESEARCH_TEST_ARGS_LOG: log,
+    },
   });
 
   const sweep = await sweptWhole(plugin, [sources.address('/notes.txt')]);
 
-  assert.equal(sweep.state, 'done');
+  assert.equal(sweep.state, 'done', sweep.reason ?? '');
+  assert.deepEqual(JSON.parse(await readFile(log, 'utf8')), args);
+});
+
+/** What get_settings says about the Digest command. */
+async function digestSetting(plugin: Started): Promise<Record<string, unknown>> {
+  return structureOf<{ settings: { digestCommand: Record<string, unknown> } }>(
+    await plugin.call('get_settings'),
+  ).settings.digestCommand;
+}
+
+/** The sentence get_settings says beside a RESEARCH_DIGEST_COMMAND it ignores. */
+function ignoredSentence(given: string): string {
+  return (
+    `RESEARCH_DIGEST_COMMAND is ${given}, which is not a JSON array of strings, the program ` +
+    'first and then each of its arguments, such as ["ollama","run","<model>"], so research ' +
+    'ignores it. Remove it from where the Host is started, such as the systemd drop-in of ' +
+    'research 1.x, and set the Digest command in Settings.'
+  );
+}
+
+test('a Digest command that is not a JSON array of strings is ignored, with a sentence beside the setting, and the Plugin Server stays up', async (t) => {
+  const sources = await serveSources(t);
+  const wrong = ['ollama run llama3', '[]', '[""]', '["ollama", 3]', '{"program":"ollama"}'];
+  for (const given of wrong) {
+    const plugin = await startedAndShaken(t, { env: { RESEARCH_DIGEST_COMMAND: given } });
+
+    const setting = await digestSetting(plugin);
+    const sweep = await sweptWhole(plugin, [sources.address('/notes.txt')]);
+
+    assert.deepEqual(
+      setting,
+      {
+        value: null,
+        from: 'default',
+        saved: null,
+        variable: 'RESEARCH_DIGEST_COMMAND',
+        problem: null,
+        ignored: ignoredSentence(given),
+      },
+      given,
+    );
+    assert.equal(sweep.state, 'failed', given);
+    assert.equal(sweep.failure, 'no-digest-command', given);
+    assert.equal(plugin.output(), '', given);
+  }
+});
+
+test('with RESEARCH_DIGEST_COMMAND in the old shell-line form, the Digest command in Settings makes the Digest', async (t) => {
+  const sources = await serveSources(t);
+  const plugin = await startedAndShaken(t, {
+    env: { RESEARCH_DIGEST_COMMAND: 'ollama run llama3.2' },
+  });
+
+  await plugin.call('update_settings', { digestCommand: [DIGEST_PROGRAM] });
+  const setting = await digestSetting(plugin);
+  const sweep = await sweptWhole(plugin, [sources.address('/notes.txt')]);
+
+  assert.equal(setting['from'], 'file');
+  assert.deepEqual(setting['value'], [DIGEST_PROGRAM]);
+  assert.equal(setting['ignored'], ignoredSentence('ollama run llama3.2'));
+  assert.equal(sweep.state, 'done', sweep.reason ?? '');
+});
+
+test('no source file starts a shell, or runs the kill program', async () => {
+  const source = join(REPOSITORY, 'src');
+  for (const name of await readdir(source)) {
+    const text = await readFile(join(source, name), 'utf8');
+    assert.doesNotMatch(text, /\/bin\/sh|['"]sh['"]|shell:\s*true/, name);
+    assert.doesNotMatch(text, /spawn(Sync)?\(\s*['"]kill['"]/, name);
+  }
 });
 
 test('make_digest makes the Digest again from the stored Extracts, with no new fetch', async (t) => {
@@ -298,7 +416,7 @@ test('make_digest makes the Digest of a failed Sweep, once a command is set', as
   const sources = await serveSources(t);
   const first = await startedAndShaken(t);
   const failed = await sweptWhole(first, [sources.address('/notes.txt')]);
-  assert.equal(failed.reason, 'no Digest command is set in RESEARCH_DIGEST_COMMAND');
+  assert.equal(failed.reason, 'no Digest command is set; set one in Settings');
   first.stop();
   await first.ended();
   const second = await startedAndShaken(t, {
@@ -389,7 +507,7 @@ test('make_digest is refused with a sentence for no command, no text, an unknown
   const read = await sweptWhole(plugin, [sources.address('/notes.txt')]);
   const unread = await sweptWhole(plugin, [sources.address('/missing')]);
   const missing = await startedAndShaken(t, {
-    env: { RESEARCH_DIGEST_COMMAND: 'no-such-model-runner' },
+    env: { RESEARCH_DIGEST_COMMAND: commandOf('no-such-model-runner') },
   });
   const elsewhere = await sweptWhole(missing, [sources.address('/notes.txt')]);
 
@@ -401,9 +519,10 @@ test('make_digest is refused with a sentence for no command, no text, an unknown
 
   assert.equal(
     noCommand.error?.message,
-    'make_digest needs RESEARCH_DIGEST_COMMAND: set it, where the Host is started, to a ' +
-      'command that reads a prompt on stdin and prints the Digest, such as ' +
-      '"ollama run <model>". The README says more.',
+    "make_digest needs a Digest command. Set one in Settings on research's Plugin Page: a " +
+      'command that reads a prompt on stdin and prints the Digest, as a JSON array of ' +
+      'strings, the program first and then each of its arguments, such as ' +
+      '["ollama","run","<model>"]. The README says more.',
   );
   assert.equal(
     noText.error?.message,

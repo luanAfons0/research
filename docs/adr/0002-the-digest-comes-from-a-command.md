@@ -6,6 +6,8 @@ Sweep — to the command's stdin, and reads the Digest from its stdout. research
 knows no model, holds no key and has no default command. This is the decision
 scribe made for its Minutes (scribe ADR-0002), for the same reasons.
 
+The command is a program and its arguments, started with no shell (ADR-0003).
+
 Any tool that reads a prompt and prints text will do: a local model through
 `ollama run`, or a cloud CLI such as `claude -p`.
 
@@ -42,3 +44,12 @@ change the command or the question. The new Digest replaces the old one.
 
 A command installed through nvm is not on the Host's service PATH, so it needs
 its absolute path.
+
+## Amended
+
+The operator now sets the Digest command in Settings on the Plugin Page, and
+research keeps it in `settings.json` in its own directory, beside
+`research.db` (FirstMate ADR-0005), so it works however the Host was started.
+`RESEARCH_DIGEST_COMMAND` still beats the file, and the file beats the
+default, which is still no command. A Sweep with no command now says to set
+one in Settings.

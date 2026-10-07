@@ -11,6 +11,11 @@ research.db-journal
 research.db-wal
 research.db-shm
 
+# The settings the operator chose on the Plugin Page, and the file a save
+# writes before it is renamed over them.
+settings.json
+settings.json.next
+
 # What a design review leaves behind: screenshots and the choices made on the
 # way. The approved mock and the design context stay in .impeccable/.
 .impeccable/review/

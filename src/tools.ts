@@ -7,6 +7,7 @@
  * twice: as text, for whoever reads it in a terminal, and as structure, for
  * the Page, which draws it. Each refusal is a JSON-RPC error with a sentence.
  */
+import { COMMAND_FORM, commandFrom, type Command } from './command.ts';
 import { badInput, type InputSchema, type Tool, type ToolResult } from './mcp.ts';
 import { within } from './store.ts';
 import {
@@ -132,7 +133,8 @@ export function toolsFor(parts: Parts): readonly Tool[] {
     {
       name: 'get_sweep',
       description:
-        'One Sweep: its state, why it failed, its Digest and when it was made, and each ' +
+        'One Sweep: its state, why it failed and the code of that reason, its Digest and ' +
+        'when it was made, and each ' +
         'Extract with its text or the reason it has none, and whether the prompt cut it. ' +
         'Give "id" for one Sweep, or "topic" alone for the latest Sweep of that Topic (null ' +
         'when it was never swept).',
@@ -176,6 +178,48 @@ export function toolsFor(parts: Parts): readonly Tool[] {
     },
 
     {
+      name: 'get_settings',
+      description:
+        'The settings an operator chooses: the Digest command, as the program and its ' +
+        'arguments the next Digest runs (null for none); who decides it ("environment" when ' +
+        'RESEARCH_DIGEST_COMMAND is set, "file" when the settings file holds it, "default" ' +
+        'for none); what the settings file holds; the problem: the sentence that says why ' +
+        'what decides cannot be used, or null; and ignored: the sentence that says why ' +
+        'RESEARCH_DIGEST_COMMAND, set but not a command, is ignored, or null.',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      call: () => told(settingsOf(parts)),
+    },
+
+    {
+      name: 'update_settings',
+      description:
+        'Change the settings an operator chooses, and keep them in the settings file in the ' +
+        'Plugin directory. What is not given is kept. RESEARCH_DIGEST_COMMAND, when it is ' +
+        'set, still decides the Digest command. A bad value is refused with one sentence, ' +
+        'and the file is left as it was. A settings file that is not a JSON object is ' +
+        'written over.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          digestCommand: {
+            type: ['array', 'null'],
+            items: { type: 'string' },
+            description:
+              'The Digest command: the program, then each of its arguments. It reads a prompt ' +
+              'on stdin and prints the Digest. Null for none.',
+          },
+        },
+        required: [],
+      },
+      call: (given) => {
+        if (given['digestCommand'] !== undefined) {
+          parts.digesting.command.save(checkDigestCommand(given['digestCommand']));
+        }
+        return told(settingsOf(parts));
+      },
+    },
+
+    {
       name: 'delete_sweep',
       description:
         'Delete a Sweep for good, with its Extracts and its Digest. It is refused while that ' +
@@ -187,6 +231,24 @@ export function toolsFor(parts: Parts): readonly Tool[] {
       },
     },
   ];
+}
+
+/** The settings, as get_settings and update_settings answer them. */
+function settingsOf(parts: Parts): unknown {
+  return { settings: { digestCommand: parts.digesting.command.view() } };
+}
+
+/** A Digest command as update_settings is given it, or null for none, or a refusal. */
+function checkDigestCommand(given: unknown): Command | null {
+  if (given === null) return null;
+  const command = commandFrom(given);
+  if (command === null) {
+    throw badInput(
+      `update_settings: digestCommand is ${JSON.stringify(given)}; set it to ${COMMAND_FORM}, ` +
+        'or to null for none.',
+    );
+  }
+  return command;
 }
 
 /** One answer, in both the shapes MCP offers, from one value. */

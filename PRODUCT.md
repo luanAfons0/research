@@ -47,8 +47,10 @@ they can open.
 - Extract marks: cut before the model; little text (may need JavaScript);
   `not read: <type>`; `HTTP <status>`; a network error.
 - Only `http` and `https` addresses; others are refused with a sentence.
-- Without `RESEARCH_DIGEST_COMMAND`, a Sweep keeps its Extracts and ends
-  `failed`, naming the variable.
+- The Digest command is set in Settings (`#settings`) and kept in
+  `settings.json` in the Plugin directory. `RESEARCH_DIGEST_COMMAND` overrides
+  it, and Settings says so. Without a command, a Sweep keeps its Extracts and
+  ends `failed`, saying to set one in Settings.
 
 ## Product Principles
 

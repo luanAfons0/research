@@ -11,14 +11,15 @@
 <!-- Three panes: the Topics on the left, the Digest in the centre, the Sweeps
      and Extracts on the right. With the class "index", only the centre shows,
      and it holds the list of Topics. The address fragment chooses the view:
-     "#" the list, "#new" a new Topic, "#topic/<id>" one Topic, and
-     "#topic/<id>/edit" its form. An Extract opens in the centre, over the
-     Digest, and Escape closes it. -->
+     "#" the list, "#new" a new Topic, "#topic/<id>" one Topic,
+     "#topic/<id>/edit" its form, and "#settings" the Settings. An Extract
+     opens in the centre, over the Digest, and Escape closes it. -->
 <div class="app index" id="app">
   <nav class="pane rail" id="rail" aria-label="Topics">
     <a class="brand" href="#"><span class="mark" aria-hidden="true"></span>research</a>
     <div class="rail-head"><span>Topics</span><button type="button" class="btn quiet" id="new-topic-rail" aria-label="New Topic"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button></div>
     <div class="rail-topics" id="rail-topics"></div>
+    <button type="button" class="btn quiet rail-foot" id="settings-rail"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.3"/><path d="M8 1.8v2.1M8 12.1v2.1M1.8 8h2.1M12.1 8h2.1M3.6 3.6l1.5 1.5M10.9 10.9l1.5 1.5M3.6 12.4l1.5-1.5M10.9 5.1l1.5-1.5"/></svg>Settings</button>
   </nav>
 
   <main class="pane main" id="main">
@@ -26,7 +27,8 @@
     <div class="index-in" id="index">
       <div class="index-head">
         <a class="brand" href="#"><span class="mark" aria-hidden="true"></span>research</a>
-        <button type="button" class="btn go" id="new-topic" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>New Topic</button>
+        <span class="acts"><button type="button" class="btn quiet" id="settings-link"><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.3"/><path d="M8 1.8v2.1M8 12.1v2.1M1.8 8h2.1M12.1 8h2.1M3.6 3.6l1.5 1.5M10.9 10.9l1.5 1.5M3.6 12.4l1.5-1.5M10.9 5.1l1.5-1.5"/></svg>Settings</button>
+        <button type="button" class="btn go" id="new-topic" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>New Topic</button></span>
       </div>
 
       <!-- What is wrong, when the Plugin Server cannot be reached. -->
@@ -156,6 +158,31 @@
         </div>
         <span class="field-error" id="form-error" role="alert" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg><span id="form-error-text"></span></span>
         <div class="acts"><button type="submit" class="btn go" id="form-submit"></button><button type="button" class="btn" id="form-cancel">Cancel</button></div>
+      </form>
+    </div>
+
+    <!-- The Settings, at "#settings": what the operator chooses, kept in
+         research's own directory by update_settings. The environment's
+         variable, when the Host was started with it, still decides. -->
+    <div class="index-in" id="settings-view" hidden>
+      <div class="index-head"><a class="brand" href="#"><span class="mark" aria-hidden="true"></span>research</a></div>
+      <h1>Settings</h1>
+      <div class="band run" id="s-digest-env" role="status" hidden>
+        <svg class="i" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.2v4M8 4.9v.1"/></svg>
+        <span class="what">The environment decides the Digest command</span>
+        <span class="why" id="s-digest-env-why"></span>
+      </div>
+      <form class="form" id="settings-form">
+        <div class="field">
+          <label for="s-digest">Digest command</label>
+          <input class="input addr" id="s-digest" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder='["ollama", "run", "llama3.2"]' aria-describedby="s-digest-help">
+          <span class="field-error" id="s-digest-err" role="alert" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l6.5 11.4h-13z"/><path d="M8 6.3v3.2M8 11.4v.1"/></svg><span id="s-digest-err-text"></span></span>
+          <span class="help" id="s-digest-help">The program, then each of its arguments, as a JSON array. research writes a prompt to its stdin and reads the Digest from its stdout. In JSON a backslash is written twice. Leave it empty for none.</span>
+        </div>
+        <p class="note warn" id="s-digest-ignored" role="status" hidden><strong>research ignores <code>RESEARCH_DIGEST_COMMAND</code>.</strong> <span id="s-digest-ignored-text"></span></p>
+        <p class="note fail" id="s-digest-problem" role="alert" hidden><strong>research cannot use this Digest command.</strong> <span id="s-digest-problem-text"></span></p>
+        <p class="note warn" id="s-digest-none" hidden><strong>No Digest command is set.</strong> A Sweep keeps the text of each Source, and makes no Digest until you set one here.</p>
+        <div class="acts"><button type="submit" class="btn go" id="settings-save">Save</button><span class="saved" id="s-saved" role="status" hidden><svg class="i" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.5"/></svg>Saved</span></div>
       </form>
     </div>
   </main>

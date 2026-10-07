@@ -6,8 +6,22 @@
 import { join } from 'node:path';
 import { FIXTURES, structureOf, type Started } from './plugin.ts';
 
+/**
+ * The fixture Digest program: the Node script on Linux, and its `.cmd` form on
+ * Windows, where a script runs only through a file Windows knows how to start.
+ */
+export const DIGEST_PROGRAM = join(
+  FIXTURES,
+  process.platform === 'win32' ? 'digest.cmd' : 'digest',
+);
+
+/** A Digest command as RESEARCH_DIGEST_COMMAND carries it: the program, then its arguments. */
+export function commandOf(program: string, ...args: readonly string[]): string {
+  return JSON.stringify([program, ...args]);
+}
+
 /** The fixture Digest command, as RESEARCH_DIGEST_COMMAND names it. */
-export const DIGEST_COMMAND = join(FIXTURES, 'digest');
+export const DIGEST_COMMAND = commandOf(DIGEST_PROGRAM);
 
 /** One Extract, as get_sweep gives it. */
 export type Extract = {
@@ -32,6 +46,8 @@ export type Sweep = {
   endedAt: string | null;
   state: string;
   reason: string | null;
+  /** The stable code of the reason, which the Plugin Page maps to what it says. */
+  failure: string | null;
   sourceCount: number;
   readCount: number;
   digest: string | null;

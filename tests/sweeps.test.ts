@@ -60,7 +60,7 @@ test('sweep_topic answers at once with the new Sweep, and the reading goes on af
   assert.equal((await ended(plugin, sweep.id)).extracts[0]?.state, 'read');
 });
 
-test('with no Digest command, a Sweep ends failed, names RESEARCH_DIGEST_COMMAND, and keeps every Extract', async (t) => {
+test('with no Digest command, a Sweep ends failed, says where to set one, and keeps every Extract', async (t) => {
   const sources = await serveSources(t);
   const plugin = await startedAndShaken(t);
 
@@ -70,8 +70,7 @@ test('with no Digest command, a Sweep ends failed, names RESEARCH_DIGEST_COMMAND
   ]);
 
   assert.equal(sweep.state, 'failed');
-  assert.match(sweep.reason ?? '', /RESEARCH_DIGEST_COMMAND/);
-  assert.equal(sweep.reason, 'no Digest command is set in RESEARCH_DIGEST_COMMAND');
+  assert.equal(sweep.reason, 'no Digest command is set; set one in Settings');
   assert.equal(sweep.digest, null);
   assert.ok(!Number.isNaN(Date.parse(sweep.endedAt ?? '')), String(sweep.endedAt));
   assert.deepEqual(
@@ -93,6 +92,7 @@ test('when no Source could be read, the Sweep ends failed with that reason', asy
 
   assert.equal(sweep.state, 'failed');
   assert.equal(sweep.reason, 'no Source could be read');
+  assert.equal(sweep.failure, 'no-source-read');
   assert.equal(sweep.extracts.length, 2);
   assert.equal(sweep.readCount, 0);
 });
@@ -319,6 +319,7 @@ test('a Sweep still reading when the Plugin Server starts again becomes failed, 
   const after = await sweepNamed(second, sweep.id);
   assert.equal(after.state, 'failed');
   assert.equal(after.reason, 'the Plugin Server stopped before the Sweep ended');
+  assert.equal(after.failure, 'plugin-server-stopped');
   assert.ok(after.endedAt !== null);
   assert.deepEqual(
     after.extracts.map((extract) => extract.state),

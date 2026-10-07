@@ -115,7 +115,7 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .band svg.i { margin-top: 2px; }
 .band .what { font-weight: 600; }
 .band .why { grid-column: 2; color: var(--muted); font-size: 14px; }
-.band .why code, .why code, .field-error code { font: 13px var(--mono); }
+.band .why code, .why code, .field-error code, .note code { font: 13px var(--mono); }
 .band .band-acts { grid-row: 1 / span 2; grid-column: 3; display: flex; gap: 8px; align-self: center; }
 .band.run { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--accent-soft); }
 .band.run svg.i { color: var(--accent); }
@@ -260,6 +260,14 @@ svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none;
 .field-error { display: flex; gap: 6px; align-items: flex-start; color: var(--fail); font-size: 14px; }
 .field-error svg.i { margin-top: 2px; }
 .form .acts { padding-top: 4px; }
+
+/* Settings: the Topic form's fields, on the Topic list's page. */
+.rail-foot { margin-top: auto; justify-content: flex-start; }
+.index-head .acts { align-items: center; }
+#settings-view h1 { font: 600 24px/1.2 var(--display); margin: 0 0 18px; }
+.form .note { margin: 0; }
+.saved { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--muted); }
+.saved svg.i { color: var(--accent); }
 
 /* The Sources of the form: a list in order, as the Extracts show an address,
    and one box under it that adds to its end. */
