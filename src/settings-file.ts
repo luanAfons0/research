@@ -79,7 +79,37 @@ export function writeSettingsFile(settings: SavedSettings, directory = '.'): voi
   else whole['digestCommand'] = arrayOf(digestCommand);
   const next = `${path}.next`;
   writeFileSync(next, `${JSON.stringify(whole, null, 2)}\n`);
-  renameSync(next, path);
+  replace(next, path);
+}
+
+/** How many times a rename is tried on Windows before its fault is said. */
+const RENAME_TRIES = 5;
+
+/** How long the first try waits before the next, in milliseconds. Each wait is longer. */
+const RENAME_WAIT_MS = 20;
+
+/** The faults Windows gives for a moment while another process holds a file open. */
+const HELD = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
+/**
+ * Rename the new file over the settings file. On Windows a process that holds
+ * it open for a moment, such as a virus scanner or the search indexer reading
+ * what was just written, makes the rename fail with EPERM, EBUSY or EACCES, so
+ * it is tried again a few times before the fault is said. Linux renames over
+ * an open file, so it tries once.
+ */
+function replace(next: string, path: string): void {
+  for (let tried = 1; ; tried += 1) {
+    try {
+      renameSync(next, path);
+      return;
+    } catch (fault) {
+      const code = (fault as NodeJS.ErrnoException).code ?? '';
+      if (process.platform !== 'win32' || tried === RENAME_TRIES || !HELD.has(code)) throw fault;
+      // The write is synchronous, so the wait is too.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, RENAME_WAIT_MS * tried);
+    }
+  }
 }
 
 /** The whole file as an object, an empty one when there is no file, or null when it is not one. */

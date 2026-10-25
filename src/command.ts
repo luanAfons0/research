@@ -79,11 +79,11 @@ const BATCH = /\.(cmd|bat)$/i;
 
 /**
  * The file a program is started from: its own path when it is a path, or the
- * first match on the PATH. On Windows a name with no extension is looked for
- * with each one in PATHEXT, as `cmd.exe` would. Null when there is none.
+ * first match on the PATH. On Windows a name with no extension of PATHEXT is
+ * looked for with each one, as `cmd.exe` would. Null when there is none.
  */
 export function findProgram(program: string, env: NodeJS.ProcessEnv = process.env): string | null {
-  const extensions = WINDOWS && extname(program) === '' ? windowsExtensions(env) : [''];
+  const extensions = WINDOWS ? windowsEndings(program, env) : [''];
   const isPath =
     isAbsolute(program) || program.includes('/') || (WINDOWS && program.includes('\\'));
   const directories = isPath
@@ -99,8 +99,21 @@ export function findProgram(program: string, env: NodeJS.ProcessEnv = process.en
   return null;
 }
 
-function windowsExtensions(env: NodeJS.ProcessEnv): string[] {
-  return (env['PATHEXT'] ?? PATHEXT).split(';').filter((extension) => extension !== '');
+/**
+ * What a program's name is tried with on Windows: nothing more when its
+ * extension is one of PATHEXT, and each one of PATHEXT when it is not. A name
+ * such as `python3.12` has an extension, `.12`, that no program runs by, so it
+ * is `python3.12.exe` that is found. A name with another extension is still
+ * tried as it is, last.
+ */
+function windowsEndings(program: string, env: NodeJS.ProcessEnv): string[] {
+  const extensions = (env['PATHEXT'] ?? PATHEXT)
+    .split(';')
+    .filter((extension) => extension !== '');
+  const own = extname(program).toUpperCase();
+  if (own === '') return extensions;
+  if (extensions.some((extension) => extension.toUpperCase() === own)) return [''];
+  return [...extensions, ''];
 }
 
 function runnable(file: string): boolean {

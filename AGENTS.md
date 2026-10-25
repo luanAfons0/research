@@ -62,7 +62,7 @@ src/           the Plugin Server. Every file is one job.
   main.ts      start-up: read the settings and settings.json, open
                research.db, fail the Sweeps left running, serve the tools,
                send Notices once the handshake offers them, close on stdin's
-               end.
+               end or on SIGTERM.
   settings.ts  what research reads from its environment, and the Digest
                command: the environment beats the settings file, which beats none.
   settings-file.ts settings.json in the Plugin directory: what the operator set

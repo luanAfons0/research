@@ -224,7 +224,8 @@ Linux, so each argument reaches the program exactly as you wrote it, and there
 is no `cd`, `&&` or `|`. Write a script of your own when you need them, and
 name it as the program. On Windows a program that is a `.cmd` or `.bat` file,
 such as an npm-installed `claude.cmd`, is started through `cmd.exe`, with
-nothing in an argument for it to read. Settings refuses a value that is not
+nothing in an argument for it to read. A name such as `python3.12`, whose
+extension is not one of PATHEXT, is found as `python3.12.exe`. Settings refuses a value that is not
 such an array with a sentence that shows the form, and keeps the command it
 had.
 

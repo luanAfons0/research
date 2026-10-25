@@ -2,7 +2,7 @@
  * Start-up: read the settings and the settings file, open `research.db`, fail the Sweeps the last
  * Plugin Server left running, serve the tools, send the Notices once the
  * Host's handshake offers them, and close the file when the Host closes the
- * pipe.
+ * pipe or sends SIGTERM.
  *
  * The Host spawned this process, holds both ends of its pipe, and started it
  * in the Plugin's own directory, so the two files this Plugin owns,
@@ -50,6 +50,25 @@ const { settings, digestCommand, store, notices } = (() => {
 // and the next start fails them.
 const stopping = new AbortController();
 
+/** Stop as the Host asks, once, whoever asks first: stdin's end or a signal. */
+function stop(): void {
+  if (stopping.signal.aborted) return;
+  notices.close();
+  stopping.abort();
+  store.close();
+}
+
+// On Linux the Host sends SIGTERM as it closes stdin, and Node's own answer to
+// it is to exit at once. A Digest command leads a process group of its own
+// (ADR-0003), so it would run on with no Sweep to answer. The same stop ends
+// it first; Ctrl+C on a Plugin Server started by hand is the same case.
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(signal, () => {
+    stop();
+    process.exit(0);
+  });
+}
+
 await serve(
   toolsFor({
     store,
@@ -59,6 +78,4 @@ await serve(
   }),
   (offered) => notices.offered(offered.notice),
 );
-notices.close();
-stopping.abort();
-store.close();
+stop();
