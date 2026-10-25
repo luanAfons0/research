@@ -157,6 +157,8 @@ export type Started = {
   ended(within?: number): Promise<Ending>;
   /** Close stdin, which is how the Host asks a Plugin Server to stop. */
   stop(): void;
+  /** Send SIGTERM, as the Host does on Linux as it closes stdin. */
+  terminate(): void;
   /** Kill the Plugin Server outright, as a crash would. */
   kill(): void;
 };
@@ -399,6 +401,7 @@ export async function startPluginServer(
         ),
       ]),
     stop: () => child.stdin!.end(),
+    terminate: () => child.kill('SIGTERM'),
     kill: () => child.kill('SIGKILL'),
   };
 }

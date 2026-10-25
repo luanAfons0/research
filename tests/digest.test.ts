@@ -9,10 +9,12 @@
  * Plugin Server as the Host speaks to it, and the Sources over HTTP.
  */
 import { strict as assert } from 'node:assert';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { delimiter, join } from 'node:path';
 import test from 'node:test';
 import {
+  FIXTURES,
   makeDirectory,
   REPOSITORY,
   startedAndShaken,
@@ -54,6 +56,25 @@ async function withCommand(
     env: { RESEARCH_DIGEST_COMMAND: DIGEST_COMMAND, RESEARCH_TEST_PROMPT_LOG: log, ...env },
   });
   return { plugin, log };
+}
+
+const ON_WINDOWS = process.platform === 'win32';
+
+/** Why a test of SIGTERM does not run on Windows. */
+const LINUX_ONLY = ON_WINDOWS ? 'Windows has no SIGTERM: a signal there kills at once' : false;
+
+/** Why a test of a `.cmd` program or of PATHEXT does not run on Linux. */
+const WINDOWS_ONLY = ON_WINDOWS ? false : 'a .cmd program and PATHEXT are for Windows alone';
+
+/**
+ * The fixture Digest command copied into a folder, its `.cmd` form under this
+ * name, so a test chooses where the program is and what it is called.
+ */
+async function digestIn(folder: string, name: string): Promise<string> {
+  await mkdir(folder, { recursive: true });
+  await copyFile(join(FIXTURES, 'digest'), join(folder, 'digest'));
+  await copyFile(join(FIXTURES, 'digest.cmd'), join(folder, `${name}.cmd`));
+  return join(folder, `${name}.cmd`);
 }
 
 /** Whether a process with this id still runs. */
@@ -317,6 +338,39 @@ test('each argument reaches the program unchanged, with no shell to read it', as
   assert.deepEqual(JSON.parse(await readFile(log, 'utf8')), args);
 });
 
+test('a .cmd program in a folder whose path has a space runs, and gets each argument unchanged', { skip: WINDOWS_ONLY }, async (t) => {
+  const sources = await serveSources(t);
+  const place = await makeDirectory(t);
+  // As npm puts claude.cmd under C:\Users\Ana Maria\AppData\Roaming\npm.
+  const program = await digestIn(join(place, 'Ana Maria', 'npm'), 'digest');
+  const log = join(place, 'args.json');
+  const args = ['two words', 'say "hi"'];
+  const plugin = await startedAndShaken(t, {
+    env: { RESEARCH_DIGEST_COMMAND: commandOf(program, ...args), RESEARCH_TEST_ARGS_LOG: log },
+  });
+
+  const sweep = await sweptWhole(plugin, [sources.address('/notes.txt')]);
+
+  assert.equal(sweep.state, 'done', sweep.reason ?? '');
+  assert.deepEqual(JSON.parse(await readFile(log, 'utf8')), args);
+});
+
+test('a program named with a dot, such as python3.12, is found on the PATH with an extension of PATHEXT', { skip: WINDOWS_ONLY }, async (t) => {
+  const sources = await serveSources(t);
+  const folder = join(await makeDirectory(t), 'bin');
+  await digestIn(folder, 'digest3.12');
+  const plugin = await startedAndShaken(t, {
+    env: {
+      RESEARCH_DIGEST_COMMAND: commandOf('digest3.12'),
+      PATH: [folder, process.env['PATH'] ?? ''].join(delimiter),
+    },
+  });
+
+  const sweep = await sweptWhole(plugin, [sources.address('/notes.txt')]);
+
+  assert.equal(sweep.state, 'done', sweep.reason ?? '');
+});
+
 /** What get_settings says about the Digest command. */
 async function digestSetting(plugin: Started): Promise<Record<string, unknown>> {
   return structureOf<{ settings: { digestCommand: Record<string, unknown> } }>(
@@ -562,6 +616,33 @@ test('closing stdin while the Digest is made stops the Plugin Server quietly, an
   assert.equal(plugin.output(), '');
   const after = await sweepNamed(again, sweep.id);
   assert.equal(after.state, 'failed');
+  assert.equal(after.reason, 'the Plugin Server stopped before the Sweep ended');
+});
+
+test('SIGTERM while the Digest is made stops the command with every process it started', { skip: LINUX_ONLY }, async (t) => {
+  const sources = await serveSources(t);
+  const place = await makeDirectory(t);
+  const started = join(place, 'child.pid');
+  const { plugin } = await withCommand(t, {
+    RESEARCH_TEST_DIGEST_HOLD: join(place, 'never'),
+    RESEARCH_TEST_DIGEST_CHILD: started,
+  });
+  const topic = await topicWith(plugin, [sources.address('/notes.txt')]);
+  const sweep = await sweepOf(plugin, topic);
+  await until('the command has started its own process', () => existsSync(started));
+  const child = Number(await readFile(started, 'utf8'));
+
+  // The Host sends it as it closes stdin, and Node's own answer to it is to
+  // exit at once. The command leads a process group of its own (ADR-0003), so
+  // nothing else would end it.
+  plugin.terminate();
+  const ending = await plugin.ended();
+
+  assert.equal(ending.code, 0);
+  assert.equal(plugin.output(), '');
+  await until(`that process ${child}, which the command started, ended`, () => !running(child));
+  const again = await startedAndShaken(t, { directory: plugin.directory });
+  const after = await sweepNamed(again, sweep.id);
   assert.equal(after.reason, 'the Plugin Server stopped before the Sweep ended');
 });
 
