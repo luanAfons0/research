@@ -80,6 +80,10 @@ research keeps its data in one file, `research.db`, in its own directory, and
 the Settings you choose beside it, in `settings.json`. Git ignores both: they
 are yours, not the project's.
 
+A Plugin Release is `mcp.js`, `mcp` and `web/`, built by `npm run build` into
+`release/`. It never holds `research.db` or `settings.json`. A tag `vMAJOR.MINOR.PATCH`
+publishes it.
+
 ## Topics
 
 A **Topic** is one subject: a name, an optional question, and its own list of

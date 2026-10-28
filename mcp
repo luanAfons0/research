@@ -13,13 +13,17 @@
 # node:sqlite, where research keeps its Topics.
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
+# A Plugin Release ships mcp.js, one bundle, and no source; a clone runs
+# src/main.ts as it is. The same wrapper serves both.
+if [ -f "$here/mcp.js" ]; then entry="$here/mcp.js"; else entry="$here/src/main.ts"; fi
+
 for node in ${RESEARCH_NODE:+"$RESEARCH_NODE"} \
             "$(command -v node 2>/dev/null)" \
             "$HOME"/.nvm/versions/node/*/bin/node; do
   [ -x "$node" ] || continue
   major=$("$node" -p 'process.versions.node.split(".")[0]' 2>/dev/null) || continue
   [ "$major" -ge 24 ] 2>/dev/null || continue
-  exec "$node" "$here/src/main.ts"
+  exec "$node" "$entry"
 done
 
 echo "research: no Node 24 or newer was found, and this Plugin is TypeScript that Node runs with no build step. Set RESEARCH_NODE to a Node 24, or start the Host with one on its PATH." >&2

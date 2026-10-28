@@ -20,3 +20,6 @@ settings.json.next
 # way. The approved mock and the design context stay in .impeccable/.
 .impeccable/review/
 .impeccable/decision/
+
+# What a Plugin Release ships, made by npm run build.
+release/
