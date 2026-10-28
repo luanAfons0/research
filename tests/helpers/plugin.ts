@@ -126,6 +126,12 @@ export type StartOptions = {
   readonly answerNotice?: NoticeAnswer;
   /** Start the `sh` wrapper `mcp` instead, as the Host does in a `wsl` Place. */
   readonly wrapper?: boolean;
+  /**
+   * A built `release/` folder to start instead of the repository: `mcp.js`
+   * run by the running Node, or `mcp` with `wrapper`. It is what a Plugin
+   * Release puts in the Plugin directory, and the Host runs it from there.
+   */
+  readonly release?: string;
 };
 
 export type Ending = { readonly code: number | null; readonly signal: NodeJS.Signals | null };
@@ -201,7 +207,14 @@ export async function startPluginServer(
 
   // The Host runs its own Node with `mcp.ts`, in the Plugin directory, with no
   // shell (FirstMate ADR-0028). The running Node is the test's own Node 24.
-  const [program, args] = options.wrapper === true ? [WRAPPER, []] : [process.execPath, [ENTRY]];
+  const [program, args] =
+    options.release !== undefined
+      ? options.wrapper === true
+        ? [join(options.release, 'mcp'), []]
+        : [process.execPath, [join(options.release, 'mcp.js')]]
+      : options.wrapper === true
+        ? [WRAPPER, []]
+        : [process.execPath, [ENTRY]];
   const child = spawn(program, args, {
     cwd: directory,
     // A Digest command the person running the tests has set is not the
